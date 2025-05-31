@@ -51,11 +51,11 @@ function handleMessage(req, res) {
 
         const isHost = roomData.members.length === 1;
         
-        // If second person joins, notify first person
+        // If second person joins, add peer-joined message for BOTH players
         if (roomData.members.length === 2) {
           roomData.messages.push({
             type: 'peer-joined',
-            from: clientId,
+            from: 'system', // System message, not from any specific player
             memberCount: 2
           });
           console.log(`🤝 Room ${room} now has 2 members - starting connection`);
@@ -107,10 +107,16 @@ function getMessages(req, res) {
     const roomData = rooms[room];
     const startIndex = parseInt(index) || 0;
     
-    // Get new messages (excluding own messages)
+    console.log(`📡 Poll from ${clientId}: startIndex=${startIndex}, totalMessages=${roomData.messages.length}`);
+    
+    // Get new messages (excluding own messages, but include system messages)
     const newMessages = roomData.messages
       .slice(startIndex)
       .filter(msg => msg.from !== clientId);
+
+    if (newMessages.length > 0) {
+      console.log(`📤 Sending ${newMessages.length} messages to ${clientId}:`, newMessages.map(m => m.type));
+    }
 
     res.json({ 
       messages: newMessages, 
