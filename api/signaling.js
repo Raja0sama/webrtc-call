@@ -26,6 +26,8 @@ function handleSignalingMessage(req, res) {
   try {
     const { type, room, clientId, ...payload } = req.body;
     
+    console.log(`Received ${type} from ${clientId} in room ${room}`);
+    
     if (!room || !clientId) {
       return res.status(400).json({ error: 'Missing room or clientId' });
     }
@@ -37,9 +39,11 @@ function handleSignalingMessage(req, res) {
         messages: [],
         createdAt: Date.now()
       });
+      console.log(`Created new room: ${room}`);
     }
 
     const roomData = rooms.get(room);
+    console.log(`Room ${room} has ${roomData.clients.size} clients, ${roomData.messages.length} messages`);
     
     switch (type) {
       case 'join-room':
@@ -74,13 +78,15 @@ function handleSignalingMessage(req, res) {
       case 'answer':
       case 'ice-candidate':
         // Relay message to other clients in room
-        roomData.messages.push({
+        const message = {
           id: Date.now(),
           type,
           timestamp: Date.now(),
           excludeClient: clientId,
           ...payload
-        });
+        };
+        roomData.messages.push(message);
+        console.log(`Added ${type} message to room ${room}, now has ${roomData.messages.length} messages`);
         
         res.json({ success: true });
         break;
@@ -122,6 +128,10 @@ function pollMessages(req, res) {
         msg.excludeClient !== clientId
       )
       .map(({ excludeClient, ...msg }) => msg); // Remove excludeClient from response
+
+    if (messages.length > 0) {
+      console.log(`Delivering ${messages.length} messages to ${clientId} in room ${room}`);
+    }
 
     res.json({ messages });
     
