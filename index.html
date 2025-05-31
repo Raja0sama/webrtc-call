@@ -333,7 +333,7 @@
                 const data = await response.json();
                 
                 if (data.messages && data.messages.length > 0) {
-                    console.log('Polling received', data.messages.length, 'messages');
+                    console.log('Polling received', data.messages.length, 'messages:', data.messages.map(m => m.type));
                     for (const message of data.messages) {
                         lastMessageTime = Math.max(lastMessageTime, message.timestamp);
                         await handleSignalingMessage(message);
@@ -346,9 +346,12 @@
 
         function startPolling() {
             if (pollInterval) clearInterval(pollInterval);
-            lastMessageTime = Date.now(); // Start from now to avoid old messages
-            pollInterval = setInterval(pollSignalingMessages, 800); // Poll faster for better responsiveness
-            console.log('Started polling for messages...');
+            lastMessageTime = 0; // Start from 0 to catch ALL messages, not just new ones
+            pollInterval = setInterval(pollSignalingMessages, 800);
+            console.log('Started polling for messages from timestamp 0...');
+            
+            // Do immediate poll
+            pollSignalingMessages();
         }
 
         function stopPolling() {
@@ -502,7 +505,7 @@
                     // If we should create offer (we're the guest), do it immediately
                     if (result.shouldCreateOffer) {
                         console.log('Creating offer as guest...');
-                        setTimeout(createOffer, 2000); // Give a moment for both to be ready
+                        setTimeout(createOffer, 3000); // Give more time for both to be ready and polling
                     }
                 }
             } catch (error) {
@@ -584,13 +587,18 @@
                 await sendSignalingMessage('offer', { offer });
                 updateStatus('connecting', 'Offer sent, waiting for answer...');
                 
+                // Force an immediate poll after sending offer to catch answer quickly
+                setTimeout(pollSignalingMessages, 1000);
+                setTimeout(pollSignalingMessages, 3000);
+                setTimeout(pollSignalingMessages, 5000);
+                
                 // Set a timeout for the answer
                 setTimeout(() => {
                     if (peerConnection.connectionState !== 'connected' && !peerConnection.remoteDescription) {
-                        console.log('No answer received after 10 seconds, check if host is online');
+                        console.log('No answer received after 15 seconds, check if host is online');
                         updateStatus('error', 'No response from host. Make sure they joined the room.');
                     }
-                }, 10000);
+                }, 15000); // Increased timeout to 15 seconds
                 
             } catch (error) {
                 console.error('Error creating offer:', error);
