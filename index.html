@@ -293,6 +293,7 @@
         // Signaling API functions
         async function sendSignalingMessage(type, data = {}) {
             try {
+                console.log('Sending:', type, data);
                 const response = await fetch('/api/signaling', {
                     method: 'POST',
                     headers: {
@@ -308,10 +309,13 @@
 
                 if (!response.ok) {
                     const error = await response.json();
+                    console.error('Signaling error response:', error);
                     throw new Error(error.error || 'Signaling failed');
                 }
 
-                return await response.json();
+                const result = await response.json();
+                console.log('Signaling response:', result);
+                return result;
             } catch (error) {
                 console.error('Signaling error:', error);
                 throw error;
@@ -413,8 +417,12 @@
 
                 // Handle remote stream
                 peerConnection.ontrack = (event) => {
-                    updateStatus('connected', 'Connected! Voice chat active');
-                    document.getElementById('call-controls').classList.remove('hidden');
+                    console.log('Remote track received!');
+                    // Only update if not already connected
+                    if (peerConnection.connectionState !== 'connected') {
+                        updateStatus('connected', 'Connected! Voice chat active');
+                        document.getElementById('call-controls').classList.remove('hidden');
+                    }
                 };
 
                 // Handle ICE candidates
@@ -433,8 +441,31 @@
                 // Handle connection state
                 peerConnection.onconnectionstatechange = () => {
                     console.log('Connection state:', peerConnection.connectionState);
-                    if (peerConnection.connectionState === 'failed') {
-                        updateStatus('error', 'Connection failed. Try refreshing.');
+                    switch (peerConnection.connectionState) {
+                        case 'connected':
+                            updateStatus('connected', 'Connected! Voice chat active');
+                            document.getElementById('call-controls').classList.remove('hidden');
+                            break;
+                        case 'connecting':
+                            updateStatus('connecting', 'Connecting...');
+                            break;
+                        case 'disconnected':
+                            updateStatus('error', 'Disconnected. Try refreshing.');
+                            break;
+                        case 'failed':
+                            updateStatus('error', 'Connection failed. Try refreshing both browsers.');
+                            break;
+                        case 'closed':
+                            updateStatus('error', 'Connection closed.');
+                            break;
+                    }
+                };
+
+                // Also listen to ICE connection state for more detailed info
+                peerConnection.oniceconnectionstatechange = () => {
+                    console.log('ICE connection state:', peerConnection.iceConnectionState);
+                    if (peerConnection.iceConnectionState === 'failed') {
+                        updateStatus('error', 'Connection failed. Check your network and try again.');
                     }
                 };
 
@@ -453,10 +484,18 @@
                 const result = await sendSignalingMessage('join-room', { username });
                 isHost = result.isHost;
                 
+                console.log('Join result:', result);
+                
                 if (result.peersInRoom === 1) {
                     updateStatus('connecting', 'Waiting for someone to join...');
                 } else if (result.peersInRoom === 2) {
                     updateStatus('connecting', 'Peer found! Establishing connection...');
+                    
+                    // If we should create offer (we're the guest), do it immediately
+                    if (result.shouldCreateOffer) {
+                        console.log('Creating offer as guest...');
+                        setTimeout(createOffer, 2000); // Give a moment for both to be ready
+                    }
                 }
             } catch (error) {
                 updateStatus('error', error.message);
@@ -464,32 +503,47 @@
         }
 
         async function handleSignalingMessage(data) {
-            console.log('Received:', data.type);
+            console.log('Received:', data.type, data);
             
             try {
                 switch (data.type) {
                     case 'peer-joined':
                         updateStatus('connecting', 'Peer joined! Establishing connection...');
-                        if (!isHost) {
-                            // Guest creates offer
-                            setTimeout(createOffer, 1000);
-                        }
+                        console.log('Peer joined, isHost:', isHost);
+                        // Host just waits for offer from guest
                         break;
                         
                     case 'offer':
+                        console.log('Received offer, creating answer...');
+                        updateStatus('connecting', 'Received offer, creating answer...');
                         await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+                        await processQueuedCandidates(); // Process any queued ICE candidates
+                        
                         const answer = await peerConnection.createAnswer();
                         await peerConnection.setLocalDescription(answer);
                         
+                        console.log('Sending answer...');
                         await sendSignalingMessage('answer', { answer });
+                        updateStatus('connecting', 'Answer sent, waiting for connection...');
                         break;
                         
                     case 'answer':
+                        console.log('Received answer...');
+                        updateStatus('connecting', 'Received answer, connecting...');
                         await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+                        await processQueuedCandidates(); // Process any queued ICE candidates
                         break;
                         
                     case 'ice-candidate':
-                        await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+                        console.log('Received ICE candidate...');
+                        if (peerConnection.remoteDescription) {
+                            await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+                        } else {
+                            console.log('Queuing ICE candidate...');
+                            // Queue for later if remote description isn't set yet
+                            if (!window.pendingCandidates) window.pendingCandidates = [];
+                            window.pendingCandidates.push(data.candidate);
+                        }
                         break;
                 }
             } catch (error) {
@@ -499,12 +553,32 @@
 
         async function createOffer() {
             try {
+                console.log('Creating offer...');
+                updateStatus('connecting', 'Creating offer...');
                 const offer = await peerConnection.createOffer();
                 await peerConnection.setLocalDescription(offer);
                 
+                console.log('Sending offer...');
                 await sendSignalingMessage('offer', { offer });
+                updateStatus('connecting', 'Offer sent, waiting for answer...');
             } catch (error) {
                 console.error('Error creating offer:', error);
+                updateStatus('error', 'Failed to create offer: ' + error.message);
+            }
+        }
+
+        // Process queued ICE candidates after remote description is set
+        async function processQueuedCandidates() {
+            if (window.pendingCandidates && window.pendingCandidates.length > 0) {
+                console.log('Processing', window.pendingCandidates.length, 'queued ICE candidates');
+                for (const candidate of window.pendingCandidates) {
+                    try {
+                        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+                    } catch (error) {
+                        console.error('Error adding queued ICE candidate:', error);
+                    }
+                }
+                window.pendingCandidates = [];
             }
         }
 

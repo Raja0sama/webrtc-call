@@ -50,19 +50,23 @@ function handleSignalingMessage(req, res) {
         roomData.clients.add(clientId);
         const isHost = roomData.clients.size === 1;
         
-        // Add join message for other clients
-        roomData.messages.push({
-          id: Date.now(),
-          type: 'peer-joined',
-          timestamp: Date.now(),
-          excludeClient: clientId,
-          peersInRoom: roomData.clients.size
-        });
+        // If this is the second person joining, notify the first person
+        if (roomData.clients.size === 2) {
+          roomData.messages.push({
+            id: Date.now(),
+            type: 'peer-joined',
+            timestamp: Date.now(),
+            excludeClient: clientId,
+            peersInRoom: roomData.clients.size,
+            shouldCreateOffer: false // Host waits for offer
+          });
+        }
         
         res.json({
           success: true,
           isHost,
-          peersInRoom: roomData.clients.size
+          peersInRoom: roomData.clients.size,
+          shouldCreateOffer: !isHost && roomData.clients.size === 2 // Guest creates offer
         });
         break;
         
