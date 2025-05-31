@@ -1,4 +1,126 @@
-<!DOCTYPE html>
+// server.js
+const server = Bun.serve({
+  port: 3000,
+  fetch(req, server) {
+    const url = new URL(req.url);
+    
+    // WebSocket upgrade for signaling
+    if (url.pathname === "/ws") {
+      const success = server.upgrade(req);
+      if (success) return undefined;
+    }
+    
+    // Serve the HTML file
+    if (url.pathname === "/" || url.pathname === "/index.html") {
+      return new Response(htmlContent, {
+        headers: { "Content-Type": "text/html" }
+      });
+    }
+    
+    return new Response("Not Found", { status: 404 });
+  },
+  
+  websocket: {
+    message(ws, message) {
+      try {
+        const data = JSON.parse(message);
+        handleSignalingMessage(ws, data);
+      } catch (error) {
+        console.error("Invalid message:", error);
+      }
+    },
+    
+    open(ws) {
+      console.log("Client connected");
+    },
+    
+    close(ws) {
+      // Remove client from any rooms
+      for (const [roomId, room] of rooms.entries()) {
+        room.clients = room.clients.filter(client => client !== ws);
+        if (room.clients.length === 0) {
+          rooms.delete(roomId);
+        }
+      }
+      console.log("Client disconnected");
+    }
+  }
+});
+
+// In-memory room management
+const rooms = new Map();
+
+function handleSignalingMessage(ws, data) {
+  const { type, room, ...payload } = data;
+  
+  switch (type) {
+    case 'join-room':
+      joinRoom(ws, room, payload.username);
+      break;
+      
+    case 'offer':
+    case 'answer':
+    case 'ice-candidate':
+      relayToOtherPeer(ws, room, { type, ...payload });
+      break;
+      
+    default:
+      console.log("Unknown message type:", type);
+  }
+}
+
+function joinRoom(ws, roomId, username) {
+  if (!rooms.has(roomId)) {
+    rooms.set(roomId, { clients: [], roomId });
+  }
+  
+  const room = rooms.get(roomId);
+  
+  // Don't allow more than 2 clients per room
+  if (room.clients.length >= 2) {
+    ws.send(JSON.stringify({ type: 'error', message: 'Room is full' }));
+    return;
+  }
+  
+  room.clients.push(ws);
+  ws.room = roomId;
+  ws.username = username;
+  
+  console.log(`${username} joined room ${roomId} (${room.clients.length}/2)`);
+  
+  // Notify client they joined successfully
+  ws.send(JSON.stringify({ 
+    type: 'room-joined', 
+    roomId,
+    isHost: room.clients.length === 1,
+    peersInRoom: room.clients.length 
+  }));
+  
+  // If this is the second person, notify both that they can start connecting
+  if (room.clients.length === 2) {
+    room.clients.forEach(client => {
+      client.send(JSON.stringify({ 
+        type: 'peer-joined', 
+        peersInRoom: 2 
+      }));
+    });
+  }
+}
+
+function relayToOtherPeer(senderWs, roomId, message) {
+  const room = rooms.get(roomId);
+  if (!room) return;
+  
+  // Send to the other peer in the room
+  room.clients.forEach(client => {
+    if (client !== senderWs) {
+      client.send(JSON.stringify(message));
+    }
+  });
+}
+
+// HTML content with WebSocket signaling
+const htmlContent = `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -212,25 +334,14 @@
             margin-left: 0.5rem;
         }
 
-        .manual-share {
-            background: rgba(251, 191, 36, 0.1);
-            border: 1px solid rgba(251, 191, 36, 0.2);
-            padding: 1rem;
+        .connection-info {
+            background: rgba(0, 112, 243, 0.1);
+            border: 1px solid rgba(0, 112, 243, 0.2);
+            padding: 0.75rem;
             border-radius: 6px;
             margin: 1rem 0;
-            font-size: 0.85rem;
-            color: #fbbf24;
-        }
-
-        .share-box {
-            background: #111;
-            border: 1px solid #333;
-            padding: 0.5rem;
-            border-radius: 4px;
-            margin: 0.5rem 0;
-            word-break: break-all;
-            font-family: monospace;
-            font-size: 0.8rem;
+            font-size: 0.9rem;
+            color: #60a5fa;
         }
     </style>
 </head>
@@ -270,17 +381,11 @@
                 </div>
             </div>
 
-            <div id="status" class="status connecting">Waiting for peer...</div>
-
-            <div id="manual-share-section" class="manual-share">
-                <strong>Manual Connection:</strong> Since this is a demo without a signaling server, copy and share these messages manually:
-                <div id="share-messages"></div>
-                <div style="margin-top: 0.5rem;">
-                    <label>Paste message from other player:</label>
-                    <input type="text" id="manual-input" placeholder="Paste signaling message here" style="margin-top: 0.25rem;" />
-                    <button class="button secondary" onclick="processManualMessage()" style="margin-top: 0.25rem; font-size: 0.8rem; padding: 0.5rem;">Process Message</button>
-                </div>
+            <div id="connection-info" class="connection-info">
+                Connected to signaling server ✓
             </div>
+
+            <div id="status" class="status connecting">Connecting...</div>
 
             <div id="call-controls" class="call-controls hidden">
                 <button class="control-btn mute-btn" id="mute-btn" onclick="toggleMute()">🔊 Unmuted</button>
@@ -292,15 +397,43 @@
     </div>
 
     <script>
+        let ws = null;
         let localStream = null;
         let peerConnection = null;
         let currentRoom = null;
         let isMuted = false;
         let isHost = false;
-        let pendingCandidates = [];
+        let username = '';
+
+        // Connect to WebSocket signaling server
+        function connectSignaling() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = protocol + '//' + window.location.host + '/ws';
+            
+            ws = new WebSocket(wsUrl);
+            
+            ws.onopen = () => {
+                console.log('Connected to signaling server');
+            };
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                handleSignalingMessage(data);
+            };
+            
+            ws.onclose = () => {
+                console.log('Disconnected from signaling server');
+                updateStatus('error', 'Lost connection to signaling server');
+            };
+            
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                updateStatus('error', 'Failed to connect to signaling server');
+            };
+        }
 
         async function createRoom() {
-            const username = document.getElementById('username').value.trim();
+            username = document.getElementById('username').value.trim();
             if (!username) {
                 alert('Please enter your name');
                 return;
@@ -309,6 +442,7 @@
             currentRoom = Math.random().toString(36).substring(2, 8).toUpperCase();
             isHost = true;
             
+            connectSignaling();
             await initializeCall();
             showRoomScreen();
         }
@@ -318,7 +452,7 @@
         }
 
         async function joinRoom() {
-            const username = document.getElementById('username').value.trim();
+            username = document.getElementById('username').value.trim();
             const roomId = document.getElementById('room-id').value.trim().toUpperCase();
             
             if (!username || !roomId) {
@@ -329,6 +463,7 @@
             currentRoom = roomId;
             isHost = false;
             
+            connectSignaling();
             await initializeCall();
             showRoomScreen();
         }
@@ -338,12 +473,7 @@
             document.getElementById('room-screen').classList.remove('hidden');
             document.getElementById('current-room').textContent = currentRoom;
             
-            if (isHost) {
-                document.getElementById('status').textContent = 'Waiting for someone to join...';
-            } else {
-                document.getElementById('status').textContent = 'Creating offer...';
-                setTimeout(() => createOffer(), 1000);
-            }
+            updateStatus('connecting', 'Joining room...');
         }
 
         async function initializeCall() {
@@ -368,32 +498,90 @@
                 peerConnection.ontrack = (event) => {
                     updateStatus('connected', 'Connected! Voice chat active');
                     document.getElementById('call-controls').classList.remove('hidden');
-                    document.getElementById('manual-share-section').style.display = 'none';
                 };
 
                 // Handle ICE candidates
                 peerConnection.onicecandidate = (event) => {
-                    if (event.candidate) {
-                        displayManualMessage('ice', {
+                    if (event.candidate && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'ice-candidate',
+                            room: currentRoom,
                             candidate: event.candidate
-                        });
+                        }));
                     }
                 };
 
                 // Handle connection state
                 peerConnection.onconnectionstatechange = () => {
                     console.log('Connection state:', peerConnection.connectionState);
-                    if (peerConnection.connectionState === 'connected') {
-                        updateStatus('connected', 'Connected! Voice chat active');
-                        document.getElementById('manual-share-section').style.display = 'none';
-                    } else if (peerConnection.connectionState === 'failed') {
-                        updateStatus('error', 'Connection failed. Try refreshing and reconnecting.');
+                    if (peerConnection.connectionState === 'failed') {
+                        updateStatus('error', 'Connection failed. Try refreshing.');
                     }
                 };
 
+                // Join room via WebSocket
+                setTimeout(() => {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'join-room',
+                            room: currentRoom,
+                            username: username
+                        }));
+                    }
+                }, 500);
+
             } catch (error) {
                 console.error('Error initializing call:', error);
-                updateStatus('error', 'Failed to access microphone. Please allow microphone access and refresh.');
+                updateStatus('error', 'Failed to access microphone');
+            }
+        }
+
+        async function handleSignalingMessage(data) {
+            console.log('Received:', data.type);
+            
+            try {
+                switch (data.type) {
+                    case 'room-joined':
+                        isHost = data.isHost;
+                        if (data.peersInRoom === 1) {
+                            updateStatus('connecting', 'Waiting for someone to join...');
+                        }
+                        break;
+                        
+                    case 'peer-joined':
+                        updateStatus('connecting', 'Peer joined! Establishing connection...');
+                        if (!isHost) {
+                            // Guest creates offer
+                            setTimeout(createOffer, 1000);
+                        }
+                        break;
+                        
+                    case 'offer':
+                        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+                        const answer = await peerConnection.createAnswer();
+                        await peerConnection.setLocalDescription(answer);
+                        
+                        ws.send(JSON.stringify({
+                            type: 'answer',
+                            room: currentRoom,
+                            answer: answer
+                        }));
+                        break;
+                        
+                    case 'answer':
+                        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+                        break;
+                        
+                    case 'ice-candidate':
+                        await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+                        break;
+                        
+                    case 'error':
+                        updateStatus('error', data.message);
+                        break;
+                }
+            } catch (error) {
+                console.error('Error handling signaling message:', error);
             }
         }
 
@@ -402,110 +590,19 @@
                 const offer = await peerConnection.createOffer();
                 await peerConnection.setLocalDescription(offer);
                 
-                displayManualMessage('offer', { offer: offer });
-                updateStatus('connecting', 'Offer created! Share the message above with the host.');
+                ws.send(JSON.stringify({
+                    type: 'offer',
+                    room: currentRoom,
+                    offer: offer
+                }));
             } catch (error) {
                 console.error('Error creating offer:', error);
-                updateStatus('error', 'Failed to create offer');
-            }
-        }
-
-        function displayManualMessage(type, data) {
-            const message = JSON.stringify({ type, ...data });
-            const shareDiv = document.getElementById('share-messages');
-            
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'share-box';
-            messageDiv.innerHTML = `
-                <strong>${type.toUpperCase()}:</strong>
-                <div style="margin-top: 0.25rem; font-size: 0.7rem;">${message.substring(0, 100)}${message.length > 100 ? '...' : ''}</div>
-                <button onclick="copyToClipboard('${message.replace(/'/g, "\\'")}')" style="background: #0070f3; color: white; border: none; padding: 0.25rem 0.5rem; border-radius: 3px; font-size: 0.7rem; margin-top: 0.25rem; cursor: pointer;">Copy Full Message</button>
-            `;
-            
-            shareDiv.appendChild(messageDiv);
-        }
-
-        function copyToClipboard(text) {
-            navigator.clipboard.writeText(text).then(() => {
-                alert('Message copied! Share this with the other player.');
-            }).catch(() => {
-                // Fallback for older browsers
-                const textArea = document.createElement('textarea');
-                textArea.value = text;
-                document.body.appendChild(textArea);
-                textArea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textArea);
-                alert('Message copied! Share this with the other player.');
-            });
-        }
-
-        async function processManualMessage() {
-            const input = document.getElementById('manual-input');
-            const messageText = input.value.trim();
-            
-            if (!messageText) {
-                alert('Please paste a message');
-                return;
-            }
-
-            try {
-                const message = JSON.parse(messageText);
-                await handleSignalingMessage(message);
-                input.value = '';
-                updateStatus('connecting', 'Message processed. Waiting for connection...');
-            } catch (error) {
-                console.error('Error processing message:', error);
-                alert('Invalid message format. Please copy the exact message from the other player.');
-            }
-        }
-
-        async function handleSignalingMessage(message) {
-            try {
-                switch (message.type) {
-                    case 'offer':
-                        if (isHost) {
-                            await peerConnection.setRemoteDescription(new RTCSessionDescription(message.offer));
-                            const answer = await peerConnection.createAnswer();
-                            await peerConnection.setLocalDescription(answer);
-                            
-                            displayManualMessage('answer', { answer: answer });
-                            updateStatus('connecting', 'Answer created! Share the message above with the joiner.');
-                        }
-                        break;
-                        
-                    case 'answer':
-                        if (!isHost) {
-                            await peerConnection.setRemoteDescription(new RTCSessionDescription(message.answer));
-                            updateStatus('connecting', 'Answer received. Exchanging connection info...');
-                        }
-                        break;
-                        
-                    case 'ice':
-                        if (peerConnection.remoteDescription) {
-                            await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
-                        } else {
-                            pendingCandidates.push(message.candidate);
-                        }
-                        break;
-                }
-
-                // Process any pending ICE candidates
-                if (peerConnection.remoteDescription && pendingCandidates.length > 0) {
-                    for (const candidate of pendingCandidates) {
-                        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-                    }
-                    pendingCandidates = [];
-                }
-            } catch (error) {
-                console.error('Error handling signaling message:', error);
-                updateStatus('error', 'Error processing message: ' + error.message);
             }
         }
 
         function updateStatus(type, message) {
             const status = document.getElementById('status');
-            status.className = `status ${type}`;
+            status.className = \`status \${type}\`;
             status.textContent = message;
         }
 
@@ -557,10 +654,18 @@
                 peerConnection.close();
                 peerConnection = null;
             }
+            
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
         }
 
         // Cleanup on page unload
         window.addEventListener('beforeunload', cleanup);
     </script>
 </body>
-</html>
+</html>`;
+
+console.log("🎮 Elden Ring Voice Call Server running on http://localhost:3000");
+console.log("📡 WebSocket signaling ready for P2P connections");

@@ -1,0 +1,13 @@
+{
+  "name": "elden-ring-voice-call",
+  "version": "1.0.0",
+  "description": "P2P Voice Chat for Elden Ring: Night Reign",
+  "main": "server.js",
+  "scripts": {
+    "start": "bun run server.js",
+    "dev": "bun --watch run server.js"
+  },
+  "keywords": ["webrtc", "voice-chat", "p2p", "elden-ring", "gaming"],
+  "author": "Your Name",
+  "license": "MIT"
+}
