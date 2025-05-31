@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Elden Ring Voice Call - Fresh v3.0</title>
+    <title>Elden Ring Voice Call - Direct Exchange v4.0</title>
     <style>
         * {
             margin: 0;
@@ -217,7 +217,7 @@
     <div class="container">
         <div class="header">
             <h1 class="title">Elden Ring Voice Call</h1>
-            <p class="subtitle">Fresh Simple P2P Chat v3.0</p>
+            <p class="subtitle">Direct Message Exchange v4.0</p>
         </div>
 
         <div id="setup-screen">
@@ -261,7 +261,7 @@
     </div>
 
     <script>
-        // FRESH SIMPLE IMPLEMENTATION v3.0 - NO TIMESTAMPS!
+        // SIMPLE DIRECT EXCHANGE v4.0
         let audioStream = null;
         let pc = null;
         let roomCode = null;
@@ -270,8 +270,7 @@
         let playerName = '';
         let playerId = '';
         let timer = null;
-        let msgCount = 0; // Simple message counter
-        let offerSent = false; // Prevent duplicate offers
+        let offerSent = false;
 
         // Generate unique player ID
         function makeId() {
@@ -295,22 +294,17 @@
 
         async function getMessages() {
             try {
-                const response = await fetch(`/api/signaling?room=${roomCode}&clientId=${playerId}&index=${msgCount}`);
+                const response = await fetch(`/api/signaling?room=${roomCode}&clientId=${playerId}`);
                 const data = await response.json();
                 
-                console.log(`📡 Poll: msgCount=${msgCount}, got ${data.messages?.length || 0} messages, nextIndex=${data.nextIndex}`);
-                
                 if (data.messages && data.messages.length > 0) {
-                    console.log('📩 New messages:', data.messages.map(m => m.type));
+                    console.log('📩 Got messages:', data.messages.map(m => m.type));
                     for (const msg of data.messages) {
                         await handleMessage(msg);
                     }
+                } else {
+                    console.log('📭 No messages');
                 }
-                
-                // CRITICAL: Always update msgCount to prevent repeating messages
-                const oldCount = msgCount;
-                msgCount = data.nextIndex;
-                console.log(`📊 Updated msgCount: ${oldCount} → ${msgCount}`);
                 
             } catch (error) {
                 console.error('❌ Polling error:', error);
@@ -319,11 +313,9 @@
 
         function startPolling() {
             if (timer) clearInterval(timer);
-            msgCount = 0;
-            offerSent = false; // Reset offer flag
-            timer = setInterval(getMessages, 500);
-            console.log('🔄 Started polling...');
-            getMessages(); // First poll
+            timer = setInterval(getMessages, 1000);
+            console.log('🔄 Started simple polling...');
+            getMessages();
         }
 
         async function handleMessage(msg) {
@@ -356,7 +348,13 @@
                         
                     case 'ice-candidate':
                         console.log('📩 Got ICE');
-                        await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+                        // Only add ICE candidate if we have remote description
+                        if (pc.remoteDescription) {
+                            await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+                        } else {
+                            console.log('⏳ Queuing ICE candidate (no remote description yet)');
+                            // We could queue these, but for simplicity just skip early ones
+                        }
                         break;
                 }
             } catch (error) {

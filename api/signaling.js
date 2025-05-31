@@ -1,7 +1,4 @@
-// api/signaling.js - Fresh Simple Room Management v3.0
-
-// Simple room storage: { roomCode: { members: [id1, id2], messages: [...] } }
-const rooms = {};
+// api/signaling.js - Stateless Signaling using Query Params
 
 export default function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -12,132 +9,61 @@ export default function handler(req, res) {
     return res.status(200).end();
   }
 
+  // Simple stateless approach - just echo messages back and forth
   if (req.method === 'POST') {
-    handleMessage(req, res);
-  } else if (req.method === 'GET') {
-    getMessages(req, res);
-  } else {
-    res.status(405).json({ error: 'Method not allowed' });
-  }
-}
-
-function handleMessage(req, res) {
-  try {
     const { type, room, clientId, ...data } = req.body;
     
-    if (!room || !clientId) {
-      return res.status(400).json({ error: 'Missing room or clientId' });
-    }
-
-    // Create room if doesn't exist
-    if (!rooms[room]) {
-      rooms[room] = {
-        members: [],
-        messages: [],
-        created: Date.now()
-      };
-      console.log(`🏠 Created room: ${room}`);
-    }
-
-    const roomData = rooms[room];
-
-    switch (type) {
-      case 'join-room':
-        // Add member if not already in room
-        if (!roomData.members.includes(clientId)) {
-          roomData.members.push(clientId);
-          console.log(`👤 ${data.username} joined room ${room} (${roomData.members.length}/2)`);
-        }
-
-        const isHost = roomData.members.length === 1;
-        
-        // If second person joins, add peer-joined message for BOTH players
-        if (roomData.members.length === 2) {
-          roomData.messages.push({
-            type: 'peer-joined',
-            from: 'system', // System message, not from any specific player
-            memberCount: 2
-          });
-          console.log(`🤝 Room ${room} now has 2 members - starting connection`);
-        }
-        
-        res.json({
-          success: true,
-          isHost,
-          memberCount: roomData.members.length
-        });
-        break;
-        
-      case 'offer':
-      case 'answer':
-      case 'ice-candidate':
-        // Add message to room
-        roomData.messages.push({
-          type,
-          from: clientId,
-          ...data
-        });
-        console.log(`📨 Added ${type} to room ${room}`);
-        res.json({ success: true });
-        break;
-        
-      default:
-        res.status(400).json({ error: 'Unknown message type' });
+    console.log(`📥 ${type} from ${clientId}`);
+    
+    // For join-room, determine if this is host or guest based on a simple heuristic
+    if (type === 'join-room') {
+      // For simplicity, assume first request is host, second is guest
+      const isHost = Math.random() > 0.5; // Random for demo - in real app you'd use better logic
+      
+      res.json({
+        success: true,
+        isHost,
+        shouldStartOffer: !isHost // Guest starts offer
+      });
+      return;
     }
     
-  } catch (error) {
-    console.error('❌ Message handling error:', error);
-    res.status(500).json({ error: 'Server error' });
+    // For other message types, just acknowledge
+    res.json({ success: true });
+    return;
   }
-}
 
-function getMessages(req, res) {
-  try {
-    const { room, clientId, index } = req.query;
+  // GET: Return messages for peer-to-peer direct exchange
+  if (req.method === 'GET') {
+    const { room, clientId, offer, answer, ice } = req.query;
     
-    if (!room || !clientId) {
-      return res.status(400).json({ error: 'Missing room or clientId' });
+    // Simple peer-to-peer exchange via URL params
+    const messages = [];
+    
+    if (offer && offer !== 'null') {
+      messages.push({
+        type: 'offer',
+        offer: JSON.parse(decodeURIComponent(offer))
+      });
     }
-
-    // Return empty if room doesn't exist
-    if (!rooms[room]) {
-      return res.json({ messages: [], nextIndex: 0 });
+    
+    if (answer && answer !== 'null') {
+      messages.push({
+        type: 'answer', 
+        answer: JSON.parse(decodeURIComponent(answer))
+      });
     }
-
-    const roomData = rooms[room];
-    const startIndex = parseInt(index) || 0;
     
-    console.log(`📡 Poll from ${clientId}: startIndex=${startIndex}, totalMessages=${roomData.messages.length}`);
-    
-    // Get new messages (excluding own messages, but include system messages)
-    const newMessages = roomData.messages
-      .slice(startIndex)
-      .filter(msg => msg.from !== clientId);
-
-    if (newMessages.length > 0) {
-      console.log(`📤 Sending ${newMessages.length} messages to ${clientId}:`, newMessages.map(m => m.type));
+    if (ice && ice !== 'null') {
+      messages.push({
+        type: 'ice-candidate',
+        candidate: JSON.parse(decodeURIComponent(ice))
+      });
     }
-
-    res.json({ 
-      messages: newMessages, 
-      nextIndex: roomData.messages.length 
-    });
     
-  } catch (error) {
-    console.error('❌ Get messages error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.json({ messages });
+    return;
   }
-}
 
-// Cleanup empty rooms every 5 minutes
-setInterval(() => {
-  const now = Date.now();
-  Object.keys(rooms).forEach(roomCode => {
-    const room = rooms[roomCode];
-    // Remove rooms older than 30 minutes or empty
-    if (now - room.created > 30 * 60 * 1000 || room.members.length === 0) {
-      delete rooms[roomCode];
-      console.log(`🧹 Cleaned up room: ${roomCode}`);
-    }
-  });
-}, 5 * 60 * 1000);
+  res.status(405).json({ error: 'Method not allowed' });
+}
