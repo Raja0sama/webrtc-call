@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Elden Ring Voice Call - Manual Exchange</title>
+    <title>Elden Ring Voice Call - Manual + ICE Exchange</title>
     <style>
         * {
             margin: 0;
@@ -244,7 +244,7 @@
     <div class="container">
         <div class="header">
             <h1 class="title">Elden Ring Voice Call</h1>
-            <p class="subtitle">Manual P2P Voice Chat - Zero Server Setup</p>
+            <p class="subtitle">Manual P2P with ICE Exchange - Guaranteed Audio</p>
         </div>
 
         <div id="setup-screen">
@@ -278,6 +278,20 @@
                 <button class="copy-btn" onclick="copyAnswer()">Copy Answer</button>
             </div>
 
+            <div id="host-ice-step" class="step hidden">
+                <span class="step-number">4</span>
+                <strong>Send these ICE candidates:</strong>
+                <div id="host-ice-message" class="message-box">Gathering ICE candidates...</div>
+                <button class="copy-btn" onclick="copyHostIce()">Copy ICE</button>
+            </div>
+
+            <div id="guest-ice-step" class="step hidden">
+                <span class="step-number">5</span>
+                <strong>Paste their ICE candidates here:</strong>
+                <textarea id="guest-ice-input" class="paste-area" placeholder="Paste the ICE candidates from guest here..."></textarea>
+                <button class="button" onclick="processGuestIce()">Process ICE</button>
+            </div>
+
             <div id="status" class="status connecting">Waiting for offer...</div>
         </div>
 
@@ -303,6 +317,20 @@
                 <button class="button" onclick="processAnswer()">Complete Connection</button>
             </div>
 
+            <div id="guest-ice-send-step" class="step hidden">
+                <span class="step-number">4</span>
+                <strong>Send these ICE candidates to host:</strong>
+                <div id="guest-ice-message" class="message-box">Gathering ICE candidates...</div>
+                <button class="copy-btn" onclick="copyGuestIce()">Copy ICE</button>
+            </div>
+
+            <div id="host-ice-receive-step" class="step hidden">
+                <span class="step-number">5</span>
+                <strong>Paste host's ICE candidates here:</strong>
+                <textarea id="host-ice-input" class="paste-area" placeholder="Paste the ICE candidates from host here..."></textarea>
+                <button class="button" onclick="processHostIce()">Process ICE</button>
+            </div>
+
             <div id="guest-status" class="status connecting">Ready to connect...</div>
         </div>
 
@@ -317,6 +345,8 @@
         let pc = null;
         let muted = false;
         let isHost = false;
+        let iceCandidates = []; // Store ICE candidates
+        let remoteAudio = null; // Remote audio element
 
         async function startAsHost() {
             isHost = true;
@@ -352,13 +382,37 @@
                 });
 
                 pc.ontrack = (event) => {
-                    console.log('🎵 Audio connected!');
-                    updateStatus('connected', 'Connected! Voice chat active 🎮');
-                    document.getElementById('call-controls').classList.remove('hidden');
+                    console.log('🎵 Remote audio track received!');
+                    
+                    // Create audio element for remote stream
+                    remoteAudio = document.createElement('audio');
+                    remoteAudio.srcObject = event.streams[0];
+                    remoteAudio.autoplay = true;
+                    remoteAudio.volume = 1;
+                    document.body.appendChild(remoteAudio);
+                    
+                    // Ensure audio plays
+                    remoteAudio.play().then(() => {
+                        console.log('🔊 Remote audio playing!');
+                        updateStatus('connected', 'Connected! Voice chat active 🎮');
+                        document.getElementById('call-controls').classList.remove('hidden');
+                    }).catch(err => {
+                        console.error('Audio play failed:', err);
+                        // Try user interaction to start audio
+                        document.addEventListener('click', () => remoteAudio.play(), { once: true });
+                        updateStatus('connected', 'Connected! Click anywhere to start audio 🎮');
+                        document.getElementById('call-controls').classList.remove('hidden');
+                    });
                 };
 
                 pc.onicecandidate = (event) => {
-                    // ICE candidates are included in the offer/answer automatically
+                    if (event.candidate) {
+                        console.log('📡 ICE candidate generated');
+                        iceCandidates.push(event.candidate);
+                        updateIceCandidatesDisplay();
+                    } else {
+                        console.log('✅ ICE gathering complete');
+                    }
                 };
 
                 pc.onconnectionstatechange = () => {
@@ -436,19 +490,19 @@
         function copyHostMessage() {
             const text = document.getElementById('host-message').textContent;
             navigator.clipboard.writeText(text);
-            showCopySuccess('copyHostMessage');
+            showCopySuccess();
         }
 
         function copyOffer() {
             const text = document.getElementById('offer-message').textContent;
             navigator.clipboard.writeText(text);
-            showCopySuccess('copyOffer');
+            showCopySuccess();
         }
 
         function copyAnswer() {
             const text = document.getElementById('answer-message').textContent;
             navigator.clipboard.writeText(text);
-            showCopySuccess('copyAnswer');
+            showCopySuccess();
         }
 
         function showCopySuccess(btnId) {
