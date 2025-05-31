@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Elden Ring Voice Call - v2.1</title>
+    <title>Elden Ring Voice Call - Fresh v3.0</title>
     <style>
         * {
             margin: 0;
@@ -211,23 +211,13 @@
             font-size: 0.8rem;
             margin-left: 0.5rem;
         }
-
-        .connection-info {
-            background: rgba(0, 112, 243, 0.1);
-            border: 1px solid rgba(0, 112, 243, 0.2);
-            padding: 0.75rem;
-            border-radius: 6px;
-            margin: 1rem 0;
-            font-size: 0.9rem;
-            color: #60a5fa;
-        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1 class="title">Elden Ring Voice Call</h1>
-            <p class="subtitle">Quick P2P voice chat for Night Reign</p>
+            <p class="subtitle">Fresh Simple P2P Chat v3.0</p>
         </div>
 
         <div id="setup-screen">
@@ -259,10 +249,6 @@
                 </div>
             </div>
 
-            <div id="connection-info" class="connection-info">
-                Connected to Vercel signaling ✓
-            </div>
-
             <div id="status" class="status connecting">Connecting...</div>
 
             <div id="call-controls" class="call-controls hidden">
@@ -275,107 +261,114 @@
     </div>
 
     <script>
-        // SIMPLE ARRAY-BASED SIGNALING - v2.0
-        let localStream = null;
-        let peerConnection = null;
-        let currentRoom = null;
-        let isMuted = false;
-        let isHost = false;
-        let username = '';
-        let clientId = '';
-        let pollInterval = null;
-        let messageIndex = 0; // Simple counter - how many messages we've seen
+        // FRESH SIMPLE IMPLEMENTATION v3.0 - NO TIMESTAMPS!
+        let audioStream = null;
+        let pc = null;
+        let roomCode = null;
+        let muted = false;
+        let host = false;
+        let playerName = '';
+        let playerId = '';
+        let timer = null;
+        let msgCount = 0; // Simple message counter
 
-        // Generate unique client ID
-        function generateClientId() {
+        // Generate unique player ID
+        function makeId() {
             return Math.random().toString(36).substring(2) + Date.now().toString(36);
         }
 
-        // Signaling API functions
-        async function sendSignalingMessage(type, data = {}) {
-            try {
-                const response = await fetch('/api/signaling', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        type,
-                        room: currentRoom,
-                        clientId,
-                        ...data
-                    })
-                });
-
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.error || 'Signaling failed');
-                }
-
-                return await response.json();
-            } catch (error) {
-                console.error('Signaling error:', error);
-                throw error;
-            }
+        // Simple signaling functions
+        async function sendMsg(type, data = {}) {
+            const response = await fetch('/api/signaling', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    type,
+                    room: roomCode,
+                    clientId: playerId,
+                    ...data
+                })
+            });
+            return await response.json();
         }
 
-        async function pollSignalingMessages() {
-            try {
-                console.log(`Polling for messages since ${lastMessageTime}...`);
-                const response = await fetch(`/api/signaling?room=${currentRoom}&clientId=${clientId}&since=${lastMessageTime}`);
-                
-                if (!response.ok) {
-                    throw new Error('Failed to poll messages');
+        async function getMessages() {
+            const response = await fetch(`/api/signaling?room=${roomCode}&clientId=${playerId}&index=${msgCount}`);
+            const data = await response.json();
+            
+            if (data.messages && data.messages.length > 0) {
+                console.log('📩 New messages:', data.messages.map(m => m.type));
+                for (const msg of data.messages) {
+                    await handleMessage(msg);
                 }
-
-                const data = await response.json();
-                
-                if (data.messages && data.messages.length > 0) {
-                    console.log('Polling received', data.messages.length, 'messages:', data.messages.map(m => `${m.type}@${m.timestamp}`));
-                    for (const message of data.messages) {
-                        console.log('Processing message:', message.type, 'timestamp:', message.timestamp);
-                        lastMessageTime = Math.max(lastMessageTime, message.timestamp);
-                        await handleSignalingMessage(message);
-                    }
-                    console.log(`Updated lastMessageTime to: ${lastMessageTime}`);
-                } else {
-                    console.log('Polling: no new messages');
-                }
-            } catch (error) {
-                console.error('Polling error:', error);
             }
+            
+            msgCount = data.nextIndex;
         }
 
         function startPolling() {
-            if (pollInterval) clearInterval(pollInterval);
-            lastMessageTime = 0; // Start from 0 to catch ALL messages, not just new ones
-            pollInterval = setInterval(pollSignalingMessages, 800);
-            console.log('Started polling for messages from timestamp 0...');
-            
-            // Do immediate poll
-            pollSignalingMessages();
+            if (timer) clearInterval(timer);
+            msgCount = 0;
+            timer = setInterval(getMessages, 500);
+            console.log('🔄 Started polling...');
+            getMessages(); // First poll
         }
 
-        function stopPolling() {
-            if (pollInterval) {
-                clearInterval(pollInterval);
-                pollInterval = null;
+        async function handleMessage(msg) {
+            console.log('📨 Handle:', msg.type);
+            
+            switch (msg.type) {
+                case 'peer-joined':
+                    updateStatus('connecting', 'Peer joined! Starting connection...');
+                    if (!host) {
+                        setTimeout(() => createOffer(), 1000);
+                    }
+                    break;
+                    
+                case 'offer':
+                    console.log('📩 Got offer');
+                    await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    await sendMsg('answer', { answer });
+                    console.log('📤 Sent answer');
+                    break;
+                    
+                case 'answer':
+                    console.log('📩 Got answer');
+                    await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
+                    break;
+                    
+                case 'ice-candidate':
+                    console.log('📩 Got ICE');
+                    await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+                    break;
             }
         }
 
+        async function createOffer() {
+            console.log('📤 Creating offer...');
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            await sendMsg('offer', { offer });
+            console.log('📤 Sent offer');
+        }
+
         async function createRoom() {
-            username = document.getElementById('username').value.trim();
-            if (!username) {
+            playerName = document.getElementById('username').value.trim();
+            if (!playerName) {
                 alert('Please enter your name');
                 return;
             }
 
-            currentRoom = Math.random().toString(36).substring(2, 8).toUpperCase();
-            clientId = generateClientId();
-            isHost = true;
+            roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+            playerId = makeId();
+            host = true;
             
-            await initializeCall();
+            await setupAudio();
             showRoomScreen();
+            await sendMsg('join-room', { username: playerName });
+            startPolling();
         }
 
         function showJoinRoom() {
@@ -383,182 +376,65 @@
         }
 
         async function joinRoom() {
-            username = document.getElementById('username').value.trim();
-            const roomId = document.getElementById('room-id').value.trim().toUpperCase();
+            playerName = document.getElementById('username').value.trim();
+            const code = document.getElementById('room-id').value.trim().toUpperCase();
             
-            if (!username || !roomId) {
+            if (!playerName || !code) {
                 alert('Please enter your name and room code');
                 return;
             }
 
-            currentRoom = roomId;
-            clientId = generateClientId();
-            isHost = false;
+            roomCode = code;
+            playerId = makeId();
+            host = false;
             
-            await initializeCall();
+            await setupAudio();
             showRoomScreen();
+            await sendMsg('join-room', { username: playerName });
+            startPolling();
         }
 
         function showRoomScreen() {
             document.getElementById('setup-screen').classList.add('hidden');
             document.getElementById('room-screen').classList.remove('hidden');
-            document.getElementById('current-room').textContent = currentRoom;
-            
-            updateStatus('connecting', 'Joining room...');
+            document.getElementById('current-room').textContent = roomCode;
+            updateStatus('connecting', host ? 'Waiting for someone to join...' : 'Joining room...');
         }
 
-        async function initializeCall() {
+        async function setupAudio() {
             try {
-                // Get user media
-                localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 
-                // Create peer connection
-                peerConnection = new RTCPeerConnection({
-                    iceServers: [
-                        { urls: 'stun:stun.l.google.com:19302' },
-                        { urls: 'stun:stun1.l.google.com:19302' }
-                    ]
+                pc = new RTCPeerConnection({
+                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
                 });
 
-                // Add local stream
-                localStream.getTracks().forEach(track => {
-                    peerConnection.addTrack(track, localStream);
+                audioStream.getTracks().forEach(track => {
+                    pc.addTrack(track, audioStream);
                 });
 
-                // Handle remote stream
-                peerConnection.ontrack = (event) => {
-                    console.log('Remote track received!');
-                    // Only update if not already connected
-                    if (peerConnection.connectionState !== 'connected') {
-                        updateStatus('connected', 'Connected! Voice chat active');
-                        document.getElementById('call-controls').classList.remove('hidden');
-                    }
+                pc.ontrack = (event) => {
+                    console.log('🎵 Audio connected!');
+                    updateStatus('connected', 'Connected! Voice chat active');
+                    document.getElementById('call-controls').classList.remove('hidden');
                 };
 
-                // Handle ICE candidates
-                peerConnection.onicecandidate = async (event) => {
+                pc.onicecandidate = async (event) => {
                     if (event.candidate) {
-                        try {
-                            await sendSignalingMessage('ice-candidate', {
-                                candidate: event.candidate
-                            });
-                        } catch (error) {
-                            console.error('Failed to send ICE candidate:', error);
-                        }
+                        await sendMsg('ice-candidate', { candidate: event.candidate });
                     }
                 };
 
-                // Handle connection state
-                peerConnection.onconnectionstatechange = () => {
-                    console.log('Connection state:', peerConnection.connectionState);
-                    switch (peerConnection.connectionState) {
-                        case 'connected':
-                            updateStatus('connected', 'Connected! Voice chat active');
-                            document.getElementById('call-controls').classList.remove('hidden');
-                            break;
-                        case 'connecting':
-                            updateStatus('connecting', 'Connecting...');
-                            break;
-                        case 'disconnected':
-                            updateStatus('error', 'Disconnected. Try refreshing.');
-                            break;
-                        case 'failed':
-                            updateStatus('error', 'Connection failed. Try refreshing both browsers.');
-                            break;
-                        case 'closed':
-                            updateStatus('error', 'Connection closed.');
-                            break;
+                pc.onconnectionstatechange = () => {
+                    console.log('🔗 Connection state:', pc.connectionState);
+                    if (pc.connectionState === 'failed') {
+                        updateStatus('error', 'Connection failed. Try refreshing.');
                     }
                 };
-
-                // Also listen to ICE connection state for more detailed info
-                peerConnection.oniceconnectionstatechange = () => {
-                    console.log('ICE connection state:', peerConnection.iceConnectionState);
-                    if (peerConnection.iceConnectionState === 'failed') {
-                        updateStatus('error', 'Connection failed. Check your network and try again.');
-                    }
-                };
-
-                // Join room
-                await joinSignalingRoom();
-                startPolling();
 
             } catch (error) {
-                console.error('Error initializing call:', error);
+                console.error('❌ Audio setup failed:', error);
                 updateStatus('error', 'Failed to access microphone');
-            }
-        }
-
-        async function joinSignalingRoom() {
-            try {
-                const result = await sendSignalingMessage('join-room', { username });
-                isHost = result.isHost;
-                
-                if (result.peersInRoom === 1) {
-                    updateStatus('connecting', 'Waiting for someone to join...');
-                } else if (result.peersInRoom === 2) {
-                    updateStatus('connecting', 'Both players connected! Setting up voice...');
-                }
-            } catch (error) {
-                updateStatus('error', error.message);
-            }
-        }
-
-        async function handleSignalingMessage(data) {
-            console.log('Received:', data.type);
-            
-            try {
-                switch (data.type) {
-                    case 'peer-joined':
-                        updateStatus('connecting', 'Peer joined! Establishing connection...');
-                        if (!isHost) {
-                            // Guest creates offer after a short delay
-                            setTimeout(createOffer, 1000);
-                        }
-                        break;
-                        
-                    case 'offer':
-                        console.log('Received offer, creating answer...');
-                        updateStatus('connecting', 'Received offer, creating answer...');
-                        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
-                        
-                        const answer = await peerConnection.createAnswer();
-                        await peerConnection.setLocalDescription(answer);
-                        
-                        console.log('Sending answer...');
-                        await sendSignalingMessage('answer', { answer });
-                        updateStatus('connecting', 'Answer sent, waiting for connection...');
-                        break;
-                        
-                    case 'answer':
-                        console.log('Received answer...');
-                        updateStatus('connecting', 'Received answer, connecting...');
-                        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
-                        break;
-                        
-                    case 'ice-candidate':
-                        console.log('Received ICE candidate...');
-                        await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-                        break;
-                }
-            } catch (error) {
-                console.error('Error handling signaling message:', error);
-            }
-        }
-
-        async function createOffer() {
-            try {
-                console.log('Creating offer...');
-                updateStatus('connecting', 'Creating offer...');
-                const offer = await peerConnection.createOffer();
-                await peerConnection.setLocalDescription(offer);
-                
-                console.log('Sending offer...');
-                await sendSignalingMessage('offer', { offer });
-                updateStatus('connecting', 'Offer sent, waiting for answer...');
-            } catch (error) {
-                console.error('Error creating offer:', error);
-                updateStatus('error', 'Failed to create offer: ' + error.message);
             }
         }
 
@@ -569,14 +445,14 @@
         }
 
         function toggleMute() {
-            if (localStream) {
-                const audioTrack = localStream.getAudioTracks()[0];
+            if (audioStream) {
+                const audioTrack = audioStream.getAudioTracks()[0];
                 if (audioTrack) {
                     audioTrack.enabled = !audioTrack.enabled;
-                    isMuted = !audioTrack.enabled;
+                    muted = !audioTrack.enabled;
                     
                     const muteBtn = document.getElementById('mute-btn');
-                    if (isMuted) {
+                    if (muted) {
                         muteBtn.textContent = '🔇 Muted';
                         muteBtn.classList.add('muted');
                     } else {
@@ -588,7 +464,7 @@
         }
 
         function copyRoomCode() {
-            navigator.clipboard.writeText(currentRoom).then(() => {
+            navigator.clipboard.writeText(roomCode).then(() => {
                 const btn = document.querySelector('.copy-btn');
                 const original = btn.textContent;
                 btn.textContent = 'Copied!';
@@ -607,20 +483,11 @@
         }
 
         function cleanup() {
-            stopPolling();
-            
-            if (localStream) {
-                localStream.getTracks().forEach(track => track.stop());
-                localStream = null;
-            }
-            
-            if (peerConnection) {
-                peerConnection.close();
-                peerConnection = null;
-            }
+            if (timer) clearInterval(timer);
+            if (audioStream) audioStream.getTracks().forEach(track => track.stop());
+            if (pc) pc.close();
         }
 
-        // Cleanup on page unload
         window.addEventListener('beforeunload', cleanup);
     </script>
 </body>
