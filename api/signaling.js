@@ -79,16 +79,16 @@ function handleSignalingMessage(req, res) {
       case 'ice-candidate':
         // Relay message to other clients in room
         const message = {
-          id: Date.now(),
+          id: Date.now() + Math.random(), // Ensure unique IDs
           type,
           timestamp: Date.now(),
           excludeClient: clientId,
           ...payload
         };
         roomData.messages.push(message);
-        console.log(`Added ${type} message to room ${room}, now has ${roomData.messages.length} messages`);
+        console.log(`Added ${type} message to room ${room}, now has ${roomData.messages.length} messages. Message:`, JSON.stringify(message, null, 2));
         
-        res.json({ success: true });
+        res.json({ success: true, messageId: message.id });
         break;
         
       default:
@@ -120,6 +120,10 @@ function pollMessages(req, res) {
     }
 
     const sinceTime = parseInt(since) || 0;
+    console.log(`Polling from ${clientId} in room ${room}, since: ${sinceTime}, total messages in room: ${roomData.messages.length}`);
+    
+    // Log all messages in room for debugging
+    console.log('All messages in room:', roomData.messages.map(m => ({ type: m.type, timestamp: m.timestamp, excludeClient: m.excludeClient })));
     
     // Get messages since the specified timestamp, excluding messages from this client
     const messages = roomData.messages
@@ -127,11 +131,10 @@ function pollMessages(req, res) {
         msg.timestamp > sinceTime && 
         msg.excludeClient !== clientId
       )
+      .sort((a, b) => a.timestamp - b.timestamp) // Sort by timestamp
       .map(({ excludeClient, ...msg }) => msg); // Remove excludeClient from response
 
-    if (messages.length > 0) {
-      console.log(`Delivering ${messages.length} messages to ${clientId} in room ${room}`);
-    }
+    console.log(`Delivering ${messages.length} messages to ${clientId}:`, messages.map(m => ({ type: m.type, timestamp: m.timestamp })));
 
     res.json({ messages });
     

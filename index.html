@@ -261,6 +261,7 @@
 
             <div id="connection-info" class="connection-info">
                 Connected to Vercel signaling ✓
+                <button onclick="pollSignalingMessages()" style="margin-left: 10px; background: #0070f3; color: white; border: none; padding: 0.25rem 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">Force Poll</button>
             </div>
 
             <div id="status" class="status connecting">Connecting...</div>
@@ -294,17 +295,19 @@
         async function sendSignalingMessage(type, data = {}) {
             try {
                 console.log('Sending:', type, data);
+                const payload = {
+                    type,
+                    room: currentRoom,
+                    clientId,
+                    ...data
+                };
+                
                 const response = await fetch('/api/signaling', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({
-                        type,
-                        room: currentRoom,
-                        clientId,
-                        ...data
-                    })
+                    body: JSON.stringify(payload)
                 });
 
                 if (!response.ok) {
@@ -315,6 +318,13 @@
 
                 const result = await response.json();
                 console.log('Signaling response:', result);
+                
+                // For offers, do an immediate poll to help with timing
+                if (type === 'offer') {
+                    console.log('Offer sent, triggering immediate poll for potential answer...');
+                    setTimeout(pollSignalingMessages, 500);
+                }
+                
                 return result;
             } catch (error) {
                 console.error('Signaling error:', error);
@@ -324,6 +334,7 @@
 
         async function pollSignalingMessages() {
             try {
+                console.log(`Polling for messages since ${lastMessageTime}...`);
                 const response = await fetch(`/api/signaling?room=${currentRoom}&clientId=${clientId}&since=${lastMessageTime}`);
                 
                 if (!response.ok) {
@@ -333,11 +344,15 @@
                 const data = await response.json();
                 
                 if (data.messages && data.messages.length > 0) {
-                    console.log('Polling received', data.messages.length, 'messages:', data.messages.map(m => m.type));
+                    console.log('Polling received', data.messages.length, 'messages:', data.messages.map(m => `${m.type}@${m.timestamp}`));
                     for (const message of data.messages) {
+                        console.log('Processing message:', message.type, 'timestamp:', message.timestamp);
                         lastMessageTime = Math.max(lastMessageTime, message.timestamp);
                         await handleSignalingMessage(message);
                     }
+                    console.log(`Updated lastMessageTime to: ${lastMessageTime}`);
+                } else {
+                    console.log('Polling: no new messages');
                 }
             } catch (error) {
                 console.error('Polling error:', error);
