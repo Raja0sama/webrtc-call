@@ -212,10 +212,25 @@
             margin-left: 0.5rem;
         }
 
-        .waiting {
-            text-align: center;
-            color: #888;
+        .manual-share {
+            background: rgba(251, 191, 36, 0.1);
+            border: 1px solid rgba(251, 191, 36, 0.2);
+            padding: 1rem;
+            border-radius: 6px;
             margin: 1rem 0;
+            font-size: 0.85rem;
+            color: #fbbf24;
+        }
+
+        .share-box {
+            background: #111;
+            border: 1px solid #333;
+            padding: 0.5rem;
+            border-radius: 4px;
+            margin: 0.5rem 0;
+            word-break: break-all;
+            font-family: monospace;
+            font-size: 0.8rem;
         }
     </style>
 </head>
@@ -257,6 +272,16 @@
 
             <div id="status" class="status connecting">Waiting for peer...</div>
 
+            <div id="manual-share-section" class="manual-share">
+                <strong>Manual Connection:</strong> Since this is a demo without a signaling server, copy and share these messages manually:
+                <div id="share-messages"></div>
+                <div style="margin-top: 0.5rem;">
+                    <label>Paste message from other player:</label>
+                    <input type="text" id="manual-input" placeholder="Paste signaling message here" style="margin-top: 0.25rem;" />
+                    <button class="button secondary" onclick="processManualMessage()" style="margin-top: 0.25rem; font-size: 0.8rem; padding: 0.5rem;">Process Message</button>
+                </div>
+            </div>
+
             <div id="call-controls" class="call-controls hidden">
                 <button class="control-btn mute-btn" id="mute-btn" onclick="toggleMute()">🔊 Unmuted</button>
                 <button class="control-btn danger" onclick="endCall()">End Call</button>
@@ -272,33 +297,7 @@
         let currentRoom = null;
         let isMuted = false;
         let isHost = false;
-
-        // Simple signaling using localStorage (for demo purposes)
-        // In production, you'd use WebSocket signaling server
-        const signalingChannel = {
-            send: (room, data) => {
-                const messages = JSON.parse(localStorage.getItem(`room_${room}`) || '[]');
-                messages.push({ ...data, timestamp: Date.now() });
-                localStorage.setItem(`room_${room}`, JSON.stringify(messages));
-            },
-            
-            listen: (room, callback) => {
-                const interval = setInterval(() => {
-                    const messages = JSON.parse(localStorage.getItem(`room_${room}`) || '[]');
-                    const lastCheck = parseInt(localStorage.getItem(`last_check_${room}`) || '0');
-                    const newMessages = messages.filter(msg => msg.timestamp > lastCheck);
-                    
-                    if (newMessages.length > 0) {
-                        localStorage.setItem(`last_check_${room}`, Date.now().toString());
-                        newMessages.forEach(callback);
-                    }
-                }, 1000);
-                
-                return () => clearInterval(interval);
-            }
-        };
-
-        let stopListening = null;
+        let pendingCandidates = [];
 
         async function createRoom() {
             const username = document.getElementById('username').value.trim();
@@ -342,7 +341,8 @@
             if (isHost) {
                 document.getElementById('status').textContent = 'Waiting for someone to join...';
             } else {
-                document.getElementById('status').textContent = 'Connecting to room...';
+                document.getElementById('status').textContent = 'Creating offer...';
+                setTimeout(() => createOffer(), 1000);
             }
         }
 
@@ -353,7 +353,10 @@
                 
                 // Create peer connection
                 peerConnection = new RTCPeerConnection({
-                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' }
+                    ]
                 });
 
                 // Add local stream
@@ -363,39 +366,97 @@
 
                 // Handle remote stream
                 peerConnection.ontrack = (event) => {
-                    // Remote audio will play automatically
                     updateStatus('connected', 'Connected! Voice chat active');
                     document.getElementById('call-controls').classList.remove('hidden');
+                    document.getElementById('manual-share-section').style.display = 'none';
                 };
 
                 // Handle ICE candidates
                 peerConnection.onicecandidate = (event) => {
                     if (event.candidate) {
-                        signalingChannel.send(currentRoom, {
-                            type: 'ice-candidate',
+                        displayManualMessage('ice', {
                             candidate: event.candidate
                         });
                     }
                 };
 
-                // Start signaling
-                stopListening = signalingChannel.listen(currentRoom, handleSignalingMessage);
-
-                if (isHost) {
-                    // Host waits for join request
-                } else {
-                    // Guest initiates call
-                    const offer = await peerConnection.createOffer();
-                    await peerConnection.setLocalDescription(offer);
-                    signalingChannel.send(currentRoom, {
-                        type: 'offer',
-                        offer: offer
-                    });
-                }
+                // Handle connection state
+                peerConnection.onconnectionstatechange = () => {
+                    console.log('Connection state:', peerConnection.connectionState);
+                    if (peerConnection.connectionState === 'connected') {
+                        updateStatus('connected', 'Connected! Voice chat active');
+                        document.getElementById('manual-share-section').style.display = 'none';
+                    } else if (peerConnection.connectionState === 'failed') {
+                        updateStatus('error', 'Connection failed. Try refreshing and reconnecting.');
+                    }
+                };
 
             } catch (error) {
                 console.error('Error initializing call:', error);
-                updateStatus('error', 'Failed to access microphone');
+                updateStatus('error', 'Failed to access microphone. Please allow microphone access and refresh.');
+            }
+        }
+
+        async function createOffer() {
+            try {
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+                
+                displayManualMessage('offer', { offer: offer });
+                updateStatus('connecting', 'Offer created! Share the message above with the host.');
+            } catch (error) {
+                console.error('Error creating offer:', error);
+                updateStatus('error', 'Failed to create offer');
+            }
+        }
+
+        function displayManualMessage(type, data) {
+            const message = JSON.stringify({ type, ...data });
+            const shareDiv = document.getElementById('share-messages');
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'share-box';
+            messageDiv.innerHTML = `
+                <strong>${type.toUpperCase()}:</strong>
+                <div style="margin-top: 0.25rem; font-size: 0.7rem;">${message.substring(0, 100)}${message.length > 100 ? '...' : ''}</div>
+                <button onclick="copyToClipboard('${message.replace(/'/g, "\\'")}')" style="background: #0070f3; color: white; border: none; padding: 0.25rem 0.5rem; border-radius: 3px; font-size: 0.7rem; margin-top: 0.25rem; cursor: pointer;">Copy Full Message</button>
+            `;
+            
+            shareDiv.appendChild(messageDiv);
+        }
+
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Message copied! Share this with the other player.');
+            }).catch(() => {
+                // Fallback for older browsers
+                const textArea = document.createElement('textarea');
+                textArea.value = text;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                alert('Message copied! Share this with the other player.');
+            });
+        }
+
+        async function processManualMessage() {
+            const input = document.getElementById('manual-input');
+            const messageText = input.value.trim();
+            
+            if (!messageText) {
+                alert('Please paste a message');
+                return;
+            }
+
+            try {
+                const message = JSON.parse(messageText);
+                await handleSignalingMessage(message);
+                input.value = '';
+                updateStatus('connecting', 'Message processed. Waiting for connection...');
+            } catch (error) {
+                console.error('Error processing message:', error);
+                alert('Invalid message format. Please copy the exact message from the other player.');
             }
         }
 
@@ -407,27 +468,38 @@
                             await peerConnection.setRemoteDescription(new RTCSessionDescription(message.offer));
                             const answer = await peerConnection.createAnswer();
                             await peerConnection.setLocalDescription(answer);
-                            signalingChannel.send(currentRoom, {
-                                type: 'answer',
-                                answer: answer
-                            });
-                            updateStatus('connecting', 'Connecting...');
+                            
+                            displayManualMessage('answer', { answer: answer });
+                            updateStatus('connecting', 'Answer created! Share the message above with the joiner.');
                         }
                         break;
                         
                     case 'answer':
                         if (!isHost) {
                             await peerConnection.setRemoteDescription(new RTCSessionDescription(message.answer));
-                            updateStatus('connecting', 'Connecting...');
+                            updateStatus('connecting', 'Answer received. Exchanging connection info...');
                         }
                         break;
                         
-                    case 'ice-candidate':
-                        await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
+                    case 'ice':
+                        if (peerConnection.remoteDescription) {
+                            await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
+                        } else {
+                            pendingCandidates.push(message.candidate);
+                        }
                         break;
+                }
+
+                // Process any pending ICE candidates
+                if (peerConnection.remoteDescription && pendingCandidates.length > 0) {
+                    for (const candidate of pendingCandidates) {
+                        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+                    }
+                    pendingCandidates = [];
                 }
             } catch (error) {
                 console.error('Error handling signaling message:', error);
+                updateStatus('error', 'Error processing message: ' + error.message);
             }
         }
 
@@ -484,16 +556,6 @@
             if (peerConnection) {
                 peerConnection.close();
                 peerConnection = null;
-            }
-            
-            if (stopListening) {
-                stopListening();
-                stopListening = null;
-            }
-            
-            if (currentRoom) {
-                localStorage.removeItem(`room_${currentRoom}`);
-                localStorage.removeItem(`last_check_${currentRoom}`);
             }
         }
 
