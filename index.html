@@ -261,7 +261,6 @@
 
             <div id="connection-info" class="connection-info">
                 Connected to Vercel signaling ✓
-                <button onclick="pollSignalingMessages()" style="margin-left: 10px; background: #0070f3; color: white; border: none; padding: 0.25rem 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">Force Poll</button>
             </div>
 
             <div id="status" class="status connecting">Connecting...</div>
@@ -284,7 +283,7 @@
         let username = '';
         let clientId = '';
         let pollInterval = null;
-        let lastMessageId = 0; // Changed from lastMessageTime to lastMessageId
+        let messageIndex = 0; // Simple counter - how many messages we've seen
 
         // Generate unique client ID
         function generateClientId() {
@@ -294,38 +293,25 @@
         // Signaling API functions
         async function sendSignalingMessage(type, data = {}) {
             try {
-                console.log('Sending:', type, data);
-                const payload = {
-                    type,
-                    room: currentRoom,
-                    clientId,
-                    ...data
-                };
-                
                 const response = await fetch('/api/signaling', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify({
+                        type,
+                        room: currentRoom,
+                        clientId,
+                        ...data
+                    })
                 });
 
                 if (!response.ok) {
                     const error = await response.json();
-                    console.error('Signaling error response:', error);
                     throw new Error(error.error || 'Signaling failed');
                 }
 
-                const result = await response.json();
-                console.log('Signaling response:', result);
-                
-                // For offers, do an immediate poll to help with timing
-                if (type === 'offer') {
-                    console.log('Offer sent, triggering immediate poll for potential answer...');
-                    setTimeout(pollSignalingMessages, 500);
-                }
-                
-                return result;
+                return await response.json();
             } catch (error) {
                 console.error('Signaling error:', error);
                 throw error;
@@ -495,9 +481,6 @@
                 // Join room
                 await joinSignalingRoom();
                 startPolling();
-                
-                // Do an immediate poll to catch any messages that might have been sent
-                setTimeout(pollSignalingMessages, 500);
 
             } catch (error) {
                 console.error('Error initializing call:', error);
@@ -510,18 +493,10 @@
                 const result = await sendSignalingMessage('join-room', { username });
                 isHost = result.isHost;
                 
-                console.log('Join result:', result);
-                
                 if (result.peersInRoom === 1) {
                     updateStatus('connecting', 'Waiting for someone to join...');
                 } else if (result.peersInRoom === 2) {
-                    updateStatus('connecting', 'Peer found! Establishing connection...');
-                    
-                    // If we should create offer (we're the guest), do it immediately
-                    if (result.shouldCreateOffer) {
-                        console.log('Creating offer as guest...');
-                        setTimeout(createOffer, 3000); // Give more time for both to be ready and polling
-                    }
+                    updateStatus('connecting', 'Both players connected! Setting up voice...');
                 }
             } catch (error) {
                 updateStatus('error', error.message);
@@ -529,61 +504,40 @@
         }
 
         async function handleSignalingMessage(data) {
-            console.log('Received:', data.type, data);
+            console.log('Received:', data.type);
             
             try {
                 switch (data.type) {
                     case 'peer-joined':
                         updateStatus('connecting', 'Peer joined! Establishing connection...');
-                        console.log('Peer joined, isHost:', isHost);
-                        // Host just waits for offer from guest
+                        if (!isHost) {
+                            // Guest creates offer after a short delay
+                            setTimeout(createOffer, 1000);
+                        }
                         break;
                         
                     case 'offer':
-                        console.log('Received offer, creating answer...', data.offer);
+                        console.log('Received offer, creating answer...');
                         updateStatus('connecting', 'Received offer, creating answer...');
+                        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
                         
-                        try {
-                            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
-                            console.log('Remote description set successfully');
-                            await processQueuedCandidates(); // Process any queued ICE candidates
-                            
-                            console.log('Creating answer...');
-                            const answer = await peerConnection.createAnswer();
-                            await peerConnection.setLocalDescription(answer);
-                            
-                            console.log('Sending answer...', answer);
-                            await sendSignalingMessage('answer', { answer });
-                            updateStatus('connecting', 'Answer sent, waiting for connection...');
-                        } catch (error) {
-                            console.error('Error handling offer:', error);
-                            updateStatus('error', 'Failed to handle offer: ' + error.message);
-                        }
+                        const answer = await peerConnection.createAnswer();
+                        await peerConnection.setLocalDescription(answer);
+                        
+                        console.log('Sending answer...');
+                        await sendSignalingMessage('answer', { answer });
+                        updateStatus('connecting', 'Answer sent, waiting for connection...');
                         break;
                         
                     case 'answer':
-                        console.log('Received answer...', data.answer);
+                        console.log('Received answer...');
                         updateStatus('connecting', 'Received answer, connecting...');
-                        try {
-                            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
-                            console.log('Answer remote description set successfully');
-                            await processQueuedCandidates(); // Process any queued ICE candidates
-                        } catch (error) {
-                            console.error('Error handling answer:', error);
-                            updateStatus('error', 'Failed to handle answer: ' + error.message);
-                        }
+                        await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
                         break;
                         
                     case 'ice-candidate':
                         console.log('Received ICE candidate...');
-                        if (peerConnection.remoteDescription) {
-                            await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-                        } else {
-                            console.log('Queuing ICE candidate...');
-                            // Queue for later if remote description isn't set yet
-                            if (!window.pendingCandidates) window.pendingCandidates = [];
-                            window.pendingCandidates.push(data.candidate);
-                        }
+                        await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
                         break;
                 }
             } catch (error) {
@@ -601,38 +555,9 @@
                 console.log('Sending offer...');
                 await sendSignalingMessage('offer', { offer });
                 updateStatus('connecting', 'Offer sent, waiting for answer...');
-                
-                // Force an immediate poll after sending offer to catch answer quickly
-                setTimeout(pollSignalingMessages, 1000);
-                setTimeout(pollSignalingMessages, 3000);
-                setTimeout(pollSignalingMessages, 5000);
-                
-                // Set a timeout for the answer
-                setTimeout(() => {
-                    if (peerConnection.connectionState !== 'connected' && !peerConnection.remoteDescription) {
-                        console.log('No answer received after 15 seconds, check if host is online');
-                        updateStatus('error', 'No response from host. Make sure they joined the room.');
-                    }
-                }, 15000); // Increased timeout to 15 seconds
-                
             } catch (error) {
                 console.error('Error creating offer:', error);
                 updateStatus('error', 'Failed to create offer: ' + error.message);
-            }
-        }
-
-        // Process queued ICE candidates after remote description is set
-        async function processQueuedCandidates() {
-            if (window.pendingCandidates && window.pendingCandidates.length > 0) {
-                console.log('Processing', window.pendingCandidates.length, 'queued ICE candidates');
-                for (const candidate of window.pendingCandidates) {
-                    try {
-                        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-                    } catch (error) {
-                        console.error('Error adding queued ICE candidate:', error);
-                    }
-                }
-                window.pendingCandidates = [];
             }
         }
 
