@@ -77,18 +77,23 @@ function handleSignalingMessage(req, res) {
       case 'offer':
       case 'answer':
       case 'ice-candidate':
-        // Relay message to other clients in room
+        // Use a sequential ID to ensure proper ordering regardless of timestamps
+        const messageId = Date.now() + (roomData.messages.length * 0.001); // Ensure unique sequential IDs
         const message = {
-          id: Date.now() + Math.random(), // Ensure unique IDs
+          id: messageId,
           type,
-          timestamp: Date.now(),
+          timestamp: messageId, // Use the same value for timestamp to ensure ordering
           excludeClient: clientId,
           ...payload
         };
         roomData.messages.push(message);
-        console.log(`Added ${type} message to room ${room}, now has ${roomData.messages.length} messages. Message:`, JSON.stringify(message, null, 2));
         
-        res.json({ success: true, messageId: message.id });
+        // Sort messages by timestamp to ensure proper order
+        roomData.messages.sort((a, b) => a.timestamp - b.timestamp);
+        
+        console.log(`Added ${type} message to room ${room}, messageId: ${messageId}, now has ${roomData.messages.length} messages`);
+        
+        res.json({ success: true, messageId });
         break;
         
       default:
