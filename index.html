@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Elden Ring Voice Call - Direct Exchange v4.0</title>
+    <title>Elden Ring Voice Call - Manual Exchange</title>
     <style>
         * {
             margin: 0;
@@ -16,18 +16,15 @@
             background: #000;
             color: #fff;
             min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
+            padding: 1rem;
             background-image: 
                 radial-gradient(circle at 25% 25%, #1a1a1a 0%, transparent 50%),
                 radial-gradient(circle at 75% 75%, #0a0a0a 0%, transparent 50%);
         }
 
         .container {
-            max-width: 500px;
-            width: 90%;
+            max-width: 600px;
+            margin: 0 auto;
             background: rgba(26, 26, 26, 0.8);
             border: 1px solid #333;
             border-radius: 12px;
@@ -56,38 +53,6 @@
             font-size: 0.9rem;
         }
 
-        .room-section {
-            margin-bottom: 2rem;
-        }
-
-        .input-group {
-            margin-bottom: 1rem;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 0.5rem;
-            color: #ccc;
-            font-size: 0.9rem;
-        }
-
-        input {
-            width: 100%;
-            padding: 0.75rem;
-            background: #111;
-            border: 1px solid #333;
-            border-radius: 6px;
-            color: #fff;
-            font-size: 1rem;
-            transition: border-color 0.2s;
-        }
-
-        input:focus {
-            outline: none;
-            border-color: #0070f3;
-            box-shadow: 0 0 0 2px rgba(0, 112, 243, 0.1);
-        }
-
         .button {
             width: 100%;
             padding: 0.75rem;
@@ -105,12 +70,6 @@
         .button:hover {
             background: #0051a2;
             transform: translateY(-1px);
-        }
-
-        .button:disabled {
-            background: #333;
-            cursor: not-allowed;
-            transform: none;
         }
 
         .button.secondary {
@@ -156,6 +115,66 @@
             border: 1px solid rgba(220, 38, 38, 0.2);
         }
 
+        .exchange-section {
+            margin: 1rem 0;
+            padding: 1rem;
+            background: rgba(0, 112, 243, 0.1);
+            border: 1px solid rgba(0, 112, 243, 0.2);
+            border-radius: 6px;
+        }
+
+        .exchange-title {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: #60a5fa;
+        }
+
+        .message-box {
+            background: #111;
+            border: 1px solid #333;
+            padding: 0.75rem;
+            border-radius: 6px;
+            margin: 0.5rem 0;
+            word-break: break-all;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8rem;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .copy-btn {
+            background: #0070f3;
+            color: #fff;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            margin: 0.25rem 0.25rem 0 0;
+        }
+
+        .copy-btn:hover {
+            background: #0051a2;
+        }
+
+        .paste-area {
+            width: 100%;
+            min-height: 100px;
+            background: #111;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 0.75rem;
+            color: #fff;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8rem;
+            resize: vertical;
+        }
+
+        .paste-area:focus {
+            outline: none;
+            border-color: #0070f3;
+        }
+
         .call-controls {
             display: flex;
             gap: 0.5rem;
@@ -189,27 +208,35 @@
             display: none;
         }
 
-        .room-code {
-            background: #111;
-            border: 1px solid #333;
+        .step {
+            margin: 1rem 0;
+            padding: 1rem;
+            background: rgba(26, 26, 26, 0.5);
+            border-left: 3px solid #0070f3;
+            border-radius: 0 6px 6px 0;
+        }
+
+        .step-number {
+            display: inline-block;
+            background: #0070f3;
+            color: #fff;
+            width: 1.5rem;
+            height: 1.5rem;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 1.5rem;
+            font-size: 0.8rem;
+            margin-right: 0.5rem;
+        }
+
+        .instructions {
+            background: rgba(251, 191, 36, 0.1);
+            border: 1px solid rgba(251, 191, 36, 0.2);
             padding: 1rem;
             border-radius: 6px;
             margin: 1rem 0;
-            text-align: center;
-            font-family: 'Courier New', monospace;
-            font-size: 1.1rem;
-            letter-spacing: 2px;
-        }
-
-        .copy-btn {
-            background: #333;
-            color: #fff;
-            border: 1px solid #555;
-            padding: 0.25rem 0.5rem;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.8rem;
-            margin-left: 0.5rem;
+            font-size: 0.9rem;
+            color: #fbbf24;
         }
     </style>
 </head>
@@ -217,204 +244,99 @@
     <div class="container">
         <div class="header">
             <h1 class="title">Elden Ring Voice Call</h1>
-            <p class="subtitle">Direct Message Exchange v4.0</p>
+            <p class="subtitle">Manual P2P Voice Chat - Zero Server Setup</p>
         </div>
 
         <div id="setup-screen">
-            <div class="room-section">
-                <div class="input-group">
-                    <label for="username">Your Name</label>
-                    <input type="text" id="username" placeholder="Enter your name" />
-                </div>
-                
-                <button class="button" onclick="createRoom()">Create Room</button>
-                <button class="button secondary" onclick="showJoinRoom()">Join Room</button>
-                
-                <div id="join-section" class="hidden">
-                    <div class="input-group" style="margin-top: 1rem;">
-                        <label for="room-id">Room Code</label>
-                        <input type="text" id="room-id" placeholder="Enter room code" />
-                    </div>
-                    <button class="button" onclick="joinRoom()">Join Room</button>
-                </div>
+            <div class="instructions">
+                <strong>📋 How it works:</strong> Share the messages below via Discord/text to connect directly browser-to-browser. No servers, no accounts, just pure P2P!
             </div>
+            
+            <button class="button" onclick="startAsHost()">🏠 Start as Host</button>
+            <button class="button secondary" onclick="startAsGuest()">👤 Join as Guest</button>
         </div>
 
-        <div id="room-screen" class="hidden">
-            <div id="room-info">
-                <div class="room-code">
-                    <span>Room: </span>
-                    <span id="current-room"></span>
-                    <button class="copy-btn" onclick="copyRoomCode()">Copy</button>
-                </div>
+        <div id="host-screen" class="hidden">
+            <div class="step">
+                <span class="step-number">1</span>
+                <strong>Send this to your friend:</strong>
+                <div id="host-message" class="message-box">Waiting for setup...</div>
+                <button class="copy-btn" onclick="copyHostMessage()">Copy Message</button>
             </div>
 
-            <div id="status" class="status connecting">Connecting...</div>
-
-            <div id="call-controls" class="call-controls hidden">
-                <button class="control-btn mute-btn" id="mute-btn" onclick="toggleMute()">🔊 Unmuted</button>
-                <button class="control-btn danger" onclick="endCall()">End Call</button>
+            <div class="step">
+                <span class="step-number">2</span>
+                <strong>Paste their OFFER message here:</strong>
+                <textarea id="offer-input" class="paste-area" placeholder="Paste the OFFER message from your friend here..."></textarea>
+                <button class="button" onclick="processOffer()">Process Offer</button>
             </div>
 
-            <button class="button secondary" onclick="leaveRoom()">Leave Room</button>
+            <div id="answer-step" class="step hidden">
+                <span class="step-number">3</span>
+                <strong>Send this ANSWER back:</strong>
+                <div id="answer-message" class="message-box">Processing...</div>
+                <button class="copy-btn" onclick="copyAnswer()">Copy Answer</button>
+            </div>
+
+            <div id="status" class="status connecting">Waiting for offer...</div>
+        </div>
+
+        <div id="guest-screen" class="hidden">
+            <div class="step">
+                <span class="step-number">1</span>
+                <strong>Paste the HOST message here:</strong>
+                <textarea id="host-input" class="paste-area" placeholder="Paste the HOST message here..."></textarea>
+                <button class="button" onclick="processHost()">Connect to Host</button>
+            </div>
+
+            <div id="offer-step" class="step hidden">
+                <span class="step-number">2</span>
+                <strong>Send this OFFER to host:</strong>
+                <div id="offer-message" class="message-box">Processing...</div>
+                <button class="copy-btn" onclick="copyOffer()">Copy Offer</button>
+            </div>
+
+            <div id="final-step" class="step hidden">
+                <span class="step-number">3</span>
+                <strong>Paste their ANSWER here:</strong>
+                <textarea id="answer-input" class="paste-area" placeholder="Paste the ANSWER message from host here..."></textarea>
+                <button class="button" onclick="processAnswer()">Complete Connection</button>
+            </div>
+
+            <div id="guest-status" class="status connecting">Ready to connect...</div>
+        </div>
+
+        <div id="call-controls" class="call-controls hidden">
+            <button class="control-btn mute-btn" id="mute-btn" onclick="toggleMute()">🔊 Unmuted</button>
+            <button class="control-btn danger" onclick="endCall()">End Call</button>
         </div>
     </div>
 
     <script>
-        // SIMPLE DIRECT EXCHANGE v4.0
         let audioStream = null;
         let pc = null;
-        let roomCode = null;
         let muted = false;
-        let host = false;
-        let playerName = '';
-        let playerId = '';
-        let timer = null;
-        let offerSent = false;
+        let isHost = false;
 
-        // Generate unique player ID
-        function makeId() {
-            return Math.random().toString(36).substring(2) + Date.now().toString(36);
-        }
-
-        // Simple signaling functions
-        async function sendMsg(type, data = {}) {
-            const response = await fetch('/api/signaling', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    type,
-                    room: roomCode,
-                    clientId: playerId,
-                    ...data
-                })
-            });
-            return await response.json();
-        }
-
-        async function getMessages() {
-            try {
-                const response = await fetch(`/api/signaling?room=${roomCode}&clientId=${playerId}`);
-                const data = await response.json();
-                
-                if (data.messages && data.messages.length > 0) {
-                    console.log('📩 Got messages:', data.messages.map(m => m.type));
-                    for (const msg of data.messages) {
-                        await handleMessage(msg);
-                    }
-                } else {
-                    console.log('📭 No messages');
-                }
-                
-            } catch (error) {
-                console.error('❌ Polling error:', error);
-            }
-        }
-
-        function startPolling() {
-            if (timer) clearInterval(timer);
-            timer = setInterval(getMessages, 1000);
-            console.log('🔄 Started simple polling...');
-            getMessages();
-        }
-
-        async function handleMessage(msg) {
-            console.log(`📨 Handle: ${msg.type} (from: ${msg.from})`);
-            
-            try {
-                switch (msg.type) {
-                    case 'peer-joined':
-                        updateStatus('connecting', 'Peer joined! Starting connection...');
-                        if (!host && !offerSent) {
-                            console.log('🎯 Guest will create offer in 1 second...');
-                            offerSent = true; // Prevent duplicate offers
-                            setTimeout(() => createOffer(), 1000);
-                        }
-                        break;
-                        
-                    case 'offer':
-                        console.log('📩 Got offer');
-                        await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
-                        const answer = await pc.createAnswer();
-                        await pc.setLocalDescription(answer);
-                        await sendMsg('answer', { answer });
-                        console.log('📤 Sent answer');
-                        break;
-                        
-                    case 'answer':
-                        console.log('📩 Got answer - CONNECTING NOW!');
-                        await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
-                        break;
-                        
-                    case 'ice-candidate':
-                        console.log('📩 Got ICE');
-                        // Only add ICE candidate if we have remote description
-                        if (pc.remoteDescription) {
-                            await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-                        } else {
-                            console.log('⏳ Queuing ICE candidate (no remote description yet)');
-                            // We could queue these, but for simplicity just skip early ones
-                        }
-                        break;
-                }
-            } catch (error) {
-                console.error('❌ Handle message error:', error);
-            }
-        }
-
-        async function createOffer() {
-            console.log('📤 Creating offer...');
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            await sendMsg('offer', { offer });
-            console.log('📤 Sent offer');
-        }
-
-        async function createRoom() {
-            playerName = document.getElementById('username').value.trim();
-            if (!playerName) {
-                alert('Please enter your name');
-                return;
-            }
-
-            roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-            playerId = makeId();
-            host = true;
-            
-            await setupAudio();
-            showRoomScreen();
-            await sendMsg('join-room', { username: playerName });
-            startPolling();
-        }
-
-        function showJoinRoom() {
-            document.getElementById('join-section').classList.remove('hidden');
-        }
-
-        async function joinRoom() {
-            playerName = document.getElementById('username').value.trim();
-            const code = document.getElementById('room-id').value.trim().toUpperCase();
-            
-            if (!playerName || !code) {
-                alert('Please enter your name and room code');
-                return;
-            }
-
-            roomCode = code;
-            playerId = makeId();
-            host = false;
-            
-            await setupAudio();
-            showRoomScreen();
-            await sendMsg('join-room', { username: playerName });
-            startPolling();
-        }
-
-        function showRoomScreen() {
+        async function startAsHost() {
+            isHost = true;
             document.getElementById('setup-screen').classList.add('hidden');
-            document.getElementById('room-screen').classList.remove('hidden');
-            document.getElementById('current-room').textContent = roomCode;
-            updateStatus('connecting', host ? 'Waiting for someone to join...' : 'Joining room...');
+            document.getElementById('host-screen').classList.remove('hidden');
+            
+            await setupAudio();
+            document.getElementById('host-message').textContent = `HOST_READY:${generateId()}`;
+        }
+
+        async function startAsGuest() {
+            isHost = false;
+            document.getElementById('setup-screen').classList.add('hidden');
+            document.getElementById('guest-screen').classList.remove('hidden');
+            
+            await setupAudio();
+        }
+
+        function generateId() {
+            return Math.random().toString(36).substring(2, 8).toUpperCase();
         }
 
         async function setupAudio() {
@@ -431,33 +353,119 @@
 
                 pc.ontrack = (event) => {
                     console.log('🎵 Audio connected!');
-                    updateStatus('connected', 'Connected! Voice chat active');
+                    updateStatus('connected', 'Connected! Voice chat active 🎮');
                     document.getElementById('call-controls').classList.remove('hidden');
                 };
 
-                pc.onicecandidate = async (event) => {
-                    if (event.candidate) {
-                        await sendMsg('ice-candidate', { candidate: event.candidate });
-                    }
+                pc.onicecandidate = (event) => {
+                    // ICE candidates are included in the offer/answer automatically
                 };
 
                 pc.onconnectionstatechange = () => {
-                    console.log('🔗 Connection state:', pc.connectionState);
+                    console.log('Connection state:', pc.connectionState);
                     if (pc.connectionState === 'failed') {
-                        updateStatus('error', 'Connection failed. Try refreshing.');
+                        updateStatus('error', 'Connection failed. Try refreshing both browsers.');
                     }
                 };
 
             } catch (error) {
                 console.error('❌ Audio setup failed:', error);
-                updateStatus('error', 'Failed to access microphone');
+                updateStatus('error', 'Failed to access microphone. Please allow microphone access.');
             }
         }
 
+        async function processOffer() {
+            const offerText = document.getElementById('offer-input').value.trim();
+            
+            if (!offerText.startsWith('OFFER:')) {
+                alert('Please paste a valid OFFER message');
+                return;
+            }
+
+            try {
+                const offerData = JSON.parse(offerText.substring(6));
+                await pc.setRemoteDescription(new RTCSessionDescription(offerData));
+                
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                
+                document.getElementById('answer-message').textContent = `ANSWER:${JSON.stringify(answer)}`;
+                document.getElementById('answer-step').classList.remove('hidden');
+                updateStatus('connecting', 'Answer created! Send it to your friend and wait for connection...');
+            } catch (error) {
+                console.error('Error processing offer:', error);
+                alert('Error processing offer. Make sure you pasted the complete message.');
+            }
+        }
+
+        async function processHost() {
+            const hostText = document.getElementById('host-input').value.trim();
+            
+            if (!hostText.startsWith('HOST_READY:')) {
+                alert('Please paste a valid HOST message');
+                return;
+            }
+
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            
+            document.getElementById('offer-message').textContent = `OFFER:${JSON.stringify(offer)}`;
+            document.getElementById('offer-step').classList.remove('hidden');
+            document.getElementById('final-step').classList.remove('hidden');
+            updateStatus('connecting', 'Offer created! Send it to host and wait for their answer...');
+        }
+
+        async function processAnswer() {
+            const answerText = document.getElementById('answer-input').value.trim();
+            
+            if (!answerText.startsWith('ANSWER:')) {
+                alert('Please paste a valid ANSWER message');
+                return;
+            }
+
+            try {
+                const answerData = JSON.parse(answerText.substring(7));
+                await pc.setRemoteDescription(new RTCSessionDescription(answerData));
+                updateStatus('connecting', 'Connecting to voice chat...');
+            } catch (error) {
+                console.error('Error processing answer:', error);
+                alert('Error processing answer. Make sure you pasted the complete message.');
+            }
+        }
+
+        function copyHostMessage() {
+            const text = document.getElementById('host-message').textContent;
+            navigator.clipboard.writeText(text);
+            showCopySuccess('copyHostMessage');
+        }
+
+        function copyOffer() {
+            const text = document.getElementById('offer-message').textContent;
+            navigator.clipboard.writeText(text);
+            showCopySuccess('copyOffer');
+        }
+
+        function copyAnswer() {
+            const text = document.getElementById('answer-message').textContent;
+            navigator.clipboard.writeText(text);
+            showCopySuccess('copyAnswer');
+        }
+
+        function showCopySuccess(btnId) {
+            const btn = event.target;
+            const original = btn.textContent;
+            btn.textContent = 'Copied!';
+            btn.style.background = '#22c55e';
+            setTimeout(() => {
+                btn.textContent = original;
+                btn.style.background = '#0070f3';
+            }, 1000);
+        }
+
         function updateStatus(type, message) {
-            const status = document.getElementById('status');
-            status.className = `status ${type}`;
-            status.textContent = message;
+            const statusEl = document.getElementById('status') || document.getElementById('guest-status');
+            statusEl.className = `status ${type}`;
+            statusEl.textContent = message;
         }
 
         function toggleMute() {
@@ -479,32 +487,11 @@
             }
         }
 
-        function copyRoomCode() {
-            navigator.clipboard.writeText(roomCode).then(() => {
-                const btn = document.querySelector('.copy-btn');
-                const original = btn.textContent;
-                btn.textContent = 'Copied!';
-                setTimeout(() => btn.textContent = original, 1000);
-            });
-        }
-
         function endCall() {
-            cleanup();
-            location.reload();
-        }
-
-        function leaveRoom() {
-            cleanup();
-            location.reload();
-        }
-
-        function cleanup() {
-            if (timer) clearInterval(timer);
             if (audioStream) audioStream.getTracks().forEach(track => track.stop());
             if (pc) pc.close();
+            location.reload();
         }
-
-        window.addEventListener('beforeunload', cleanup);
     </script>
 </body>
 </html>
