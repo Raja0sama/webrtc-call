@@ -271,6 +271,7 @@
         let playerId = '';
         let timer = null;
         let msgCount = 0; // Simple message counter
+        let offerSent = false; // Prevent duplicate offers
 
         // Generate unique player ID
         function makeId() {
@@ -293,56 +294,73 @@
         }
 
         async function getMessages() {
-            const response = await fetch(`/api/signaling?room=${roomCode}&clientId=${playerId}&index=${msgCount}`);
-            const data = await response.json();
-            
-            if (data.messages && data.messages.length > 0) {
-                console.log('📩 New messages:', data.messages.map(m => m.type));
-                for (const msg of data.messages) {
-                    await handleMessage(msg);
+            try {
+                const response = await fetch(`/api/signaling?room=${roomCode}&clientId=${playerId}&index=${msgCount}`);
+                const data = await response.json();
+                
+                console.log(`📡 Poll: msgCount=${msgCount}, got ${data.messages?.length || 0} messages, nextIndex=${data.nextIndex}`);
+                
+                if (data.messages && data.messages.length > 0) {
+                    console.log('📩 New messages:', data.messages.map(m => m.type));
+                    for (const msg of data.messages) {
+                        await handleMessage(msg);
+                    }
                 }
+                
+                // CRITICAL: Always update msgCount to prevent repeating messages
+                const oldCount = msgCount;
+                msgCount = data.nextIndex;
+                console.log(`📊 Updated msgCount: ${oldCount} → ${msgCount}`);
+                
+            } catch (error) {
+                console.error('❌ Polling error:', error);
             }
-            
-            msgCount = data.nextIndex;
         }
 
         function startPolling() {
             if (timer) clearInterval(timer);
             msgCount = 0;
+            offerSent = false; // Reset offer flag
             timer = setInterval(getMessages, 500);
             console.log('🔄 Started polling...');
             getMessages(); // First poll
         }
 
         async function handleMessage(msg) {
-            console.log('📨 Handle:', msg.type);
+            console.log(`📨 Handle: ${msg.type} (from: ${msg.from})`);
             
-            switch (msg.type) {
-                case 'peer-joined':
-                    updateStatus('connecting', 'Peer joined! Starting connection...');
-                    if (!host) {
-                        setTimeout(() => createOffer(), 1000);
-                    }
-                    break;
-                    
-                case 'offer':
-                    console.log('📩 Got offer');
-                    await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
-                    const answer = await pc.createAnswer();
-                    await pc.setLocalDescription(answer);
-                    await sendMsg('answer', { answer });
-                    console.log('📤 Sent answer');
-                    break;
-                    
-                case 'answer':
-                    console.log('📩 Got answer');
-                    await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
-                    break;
-                    
-                case 'ice-candidate':
-                    console.log('📩 Got ICE');
-                    await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-                    break;
+            try {
+                switch (msg.type) {
+                    case 'peer-joined':
+                        updateStatus('connecting', 'Peer joined! Starting connection...');
+                        if (!host && !offerSent) {
+                            console.log('🎯 Guest will create offer in 1 second...');
+                            offerSent = true; // Prevent duplicate offers
+                            setTimeout(() => createOffer(), 1000);
+                        }
+                        break;
+                        
+                    case 'offer':
+                        console.log('📩 Got offer');
+                        await pc.setRemoteDescription(new RTCSessionDescription(msg.offer));
+                        const answer = await pc.createAnswer();
+                        await pc.setLocalDescription(answer);
+                        await sendMsg('answer', { answer });
+                        console.log('📤 Sent answer');
+                        break;
+                        
+                    case 'answer':
+                        console.log('📩 Got answer - CONNECTING NOW!');
+                        await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
+                        break;
+                        
+                    case 'ice-candidate':
+                        console.log('📩 Got ICE');
+                        await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+                        break;
+                }
+            } catch (error) {
+                console.error('❌ Handle message error:', error);
             }
         }
 
