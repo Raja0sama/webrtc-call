@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Elden Ring Voice Call - Manual + ICE Exchange</title>
+    <title>Elden Ring Voice Call - Robust Manual Exchange</title>
     <style>
         * {
             margin: 0;
@@ -140,6 +140,13 @@
             font-size: 0.8rem;
             max-height: 150px;
             overflow-y: auto;
+            cursor: text;
+            user-select: all; /* Make text easily selectable */
+        }
+
+        .message-box:hover {
+            border-color: #0070f3;
+            background: #1a1a1a;
         }
 
         .copy-btn {
@@ -244,12 +251,14 @@
     <div class="container">
         <div class="header">
             <h1 class="title">Elden Ring Voice Call</h1>
-            <p class="subtitle">Manual P2P with ICE Exchange - Guaranteed Audio</p>
+            <p class="subtitle">Robust Manual P2P - Better Error Handling</p>
         </div>
 
         <div id="setup-screen">
             <div class="instructions">
-                <strong>📋 How it works:</strong> Share the messages below via Discord/text to connect directly browser-to-browser. No servers, no accounts, just pure P2P!
+                <strong>📋 How it works:</strong> Share the messages below via Discord/text to connect directly browser-to-browser. 
+                <br><br>
+                <strong>⚠️ Important:</strong> The messages are VERY long (1000+ characters). Make sure you copy the ENTIRE message - if you only copy part of it, you'll get an error. Use Ctrl+A to select all text in the message box before copying.
             </div>
             
             <button class="button" onclick="startAsHost()">🏠 Start as Host</button>
@@ -260,8 +269,9 @@
             <div class="step">
                 <span class="step-number">1</span>
                 <strong>Send this to your friend:</strong>
-                <div id="host-message" class="message-box">Waiting for setup...</div>
+                <div id="host-message" class="message-box" onclick="selectAllText(this)">Waiting for setup...</div>
                 <button class="copy-btn" onclick="copyHostMessage()">Copy Message</button>
+                <small style="color: #888;">💡 Click the message box to select all text, then copy</small>
             </div>
 
             <div class="step">
@@ -274,14 +284,15 @@
             <div id="answer-step" class="step hidden">
                 <span class="step-number">3</span>
                 <strong>Send this ANSWER back:</strong>
-                <div id="answer-message" class="message-box">Processing...</div>
+                <div id="answer-message" class="message-box" onclick="selectAllText(this)">Processing...</div>
                 <button class="copy-btn" onclick="copyAnswer()">Copy Answer</button>
+                <small style="color: #888;">💡 This message is VERY long - make sure to copy it completely</small>
             </div>
 
             <div id="host-ice-step" class="step hidden">
                 <span class="step-number">4</span>
                 <strong>Send these ICE candidates:</strong>
-                <div id="host-ice-message" class="message-box">Gathering ICE candidates...</div>
+                <div id="host-ice-message" class="message-box" onclick="selectAllText(this)">Gathering ICE candidates...</div>
                 <button class="copy-btn" onclick="copyHostIce()">Copy ICE</button>
             </div>
 
@@ -456,14 +467,20 @@
             const hostText = document.getElementById('host-input').value.trim();
             
             if (!hostText.startsWith('HOST_READY:')) {
-                alert('Please paste a valid HOST message');
+                alert('Please paste a valid HOST message (should start with "HOST_READY:")');
                 return;
             }
 
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
             
-            document.getElementById('offer-message').textContent = `OFFER:${JSON.stringify(offer)}`;
+            // Create compact offer
+            const compactOffer = {
+                type: offer.type,
+                sdp: offer.sdp
+            };
+            
+            document.getElementById('offer-message').textContent = `OFFER:${JSON.stringify(compactOffer)}`;
             document.getElementById('offer-step').classList.remove('hidden');
             document.getElementById('final-step').classList.remove('hidden');
             updateStatus('connecting', 'Offer created! Send it to host and wait for their answer...');
@@ -488,21 +505,37 @@
         }
 
         function copyHostMessage() {
-            const text = document.getElementById('host-message').textContent;
-            navigator.clipboard.writeText(text);
-            showCopySuccess();
+            const messageElement = document.getElementById('host-message');
+            selectAllText(messageElement);
+            const text = messageElement.textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                showCopySuccess();
+            }).catch(() => {
+                // Fallback: just select the text
+                alert('Text selected! Press Ctrl+C to copy.');
+            });
         }
 
         function copyOffer() {
-            const text = document.getElementById('offer-message').textContent;
-            navigator.clipboard.writeText(text);
-            showCopySuccess();
+            const messageElement = document.getElementById('offer-message');
+            selectAllText(messageElement);
+            const text = messageElement.textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                showCopySuccess();
+            }).catch(() => {
+                alert('Text selected! Press Ctrl+C to copy.');
+            });
         }
 
         function copyAnswer() {
-            const text = document.getElementById('answer-message').textContent;
-            navigator.clipboard.writeText(text);
-            showCopySuccess();
+            const messageElement = document.getElementById('answer-message');
+            selectAllText(messageElement);
+            const text = messageElement.textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                showCopySuccess();
+            }).catch(() => {
+                alert('Text selected! Press Ctrl+C to copy.');
+            });
         }
 
         function showCopySuccess(btnId) {
